@@ -78,9 +78,9 @@ export function ProjectDetail({
       value: acc,
       tooltip: (
         <>
-          <b>{fmt.date(x.ts)}</b>
+          <b>{x.monthly ? fmt.monthYear(x.ts) : fmt.date(x.ts)}</b>
           <div>{t("Acumulado: {v}", { v: fmt.usd(acc) })}</div>
-          <div className="muted">{t("Ese día: {v}", { v: fmt.usd(x.value) })}</div>
+          <div className="muted">{t(x.monthly ? "Ese mes: {v}" : "Ese día: {v}", { v: fmt.usd(x.value) })}</div>
         </>
       ),
     };

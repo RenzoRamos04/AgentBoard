@@ -9,7 +9,7 @@ import type { DashboardData } from "../lib/useData";
 import { t } from "../lib/i18n";
 import { Bars, Columns, Legend, Segmented, ShareBar } from "../components/Charts";
 import { DataTable, type Column } from "../components/DataTable";
-import { barColumn, cost, dayPoints, err, errClass, shot, shotClass, startOfDay } from "./panels";
+import { barColumn, bucketing, cost, dayPoints, err, errClass, shot, shotClass } from "./panels";
 
 // --- Bloques genéricos ------------------------------------------------------------------
 
@@ -166,9 +166,10 @@ function EvolutionCard({
   const legend = ranked.slice(0, maxKeys).map(([key, t]) => ({ label: t.label, color: colors.get(key)! }));
   if (ranked.length > maxKeys) legend.push({ label: t("Otros"), color: "var(--text-muted)" });
 
+  const b = bucketing(data.daily, data.filter);
   const byDay = new Map<number, Map<string, { key: string; label: string; value: number; color: string }>>();
   for (const s of series) {
-    const day = startOfDay(s.ts);
+    const day = b.key(s.ts);
     const key = colors.has(s.key) ? s.key : "__otros";
     const map = byDay.get(day) ?? new Map();
     const cur = map.get(key) ?? { key, label: key === "__otros" ? t("Otros") : label(s), value: 0, color: colors.get(s.key) ?? "var(--text-muted)" };
@@ -185,7 +186,7 @@ function EvolutionCard({
       stack,
       tooltip: (
         <>
-          <b>{fmt.date(d.ts)}</b>
+          <b>{b.label(d.ts)}</b>
           <div>{format(value)}</div>
           {stack.slice(0, 6).map((s) => (
             <div key={s.key} className="muted">
@@ -274,11 +275,14 @@ export function ActivityFull({ data }: { data: DashboardData }) {
     { header: "1-shot", cell: (r) => shot(r.oneShot), align: "right", width: "60px", className: (r) => shotClass(r.oneShot) },
     barColumn(t("Reparto del coste"), rows, (r) => r.costUsd, "var(--act-coding)"),
   ];
+  const b = bucketing(data.daily, data.filter);
   const byDay = new Map<number, { key: string; label: string; value: number; color: string }[]>();
   for (const d of data.activityDaily) {
-    const day = startOfDay(d.ts);
+    const day = b.key(d.ts);
     const list = byDay.get(day) ?? [];
-    list.push({ key: d.activity, label: activityLabel(d.activity), value: get({ costUsd: d.costUsd, turns: d.turns }), color: activityColor(d.activity) });
+    const cur = list.find((x) => x.key === d.activity);
+    if (cur) cur.value += get({ costUsd: d.costUsd, turns: d.turns });
+    else list.push({ key: d.activity, label: activityLabel(d.activity), value: get({ costUsd: d.costUsd, turns: d.turns }), color: activityColor(d.activity) });
     byDay.set(day, list);
   }
   const points = dayPoints(data.daily, data.filter).map((d) => {
@@ -290,7 +294,7 @@ export function ActivityFull({ data }: { data: DashboardData }) {
       stack,
       tooltip: (
         <>
-          <b>{fmt.date(d.ts)}</b>
+          <b>{b.label(d.ts)}</b>
           <div>{format(value)}</div>
           {stack.slice(0, 5).map((s) => (
             <div key={s.key} className="muted">
@@ -375,7 +379,7 @@ function UsesFull({ rows, header, plural, others, color, series, data, seriesTit
       </Card>
       <div className="grid-2">
         <RankingCard title={t("Ranking")} rows={rows} label={(r) => r.label} color={() => color} metrics={[M.uses, M.errorRate]} othersLabel={t(others)} />
-        <ShareCard title={t("Reparto de las llamadas")} rows={rows.slice(0, 8)} label={(r) => r.label} color={rc} metric={M.uses} />
+        <ShareCard title={t("Reparto de las llamadas")} rows={rows} label={(r) => r.label} color={rc} metric={M.uses} othersLabel={t(others)} />
       </div>
       {series && seriesTitle && <EvolutionCard title={t(seriesTitle)} series={series} data={data} color={(key) => rc({ key })} metrics={[{ value: "calls", label: "Llamadas" }]} />}
     </>

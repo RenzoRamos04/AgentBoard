@@ -7,7 +7,7 @@ import { Kpis, type Kpi } from "../components/Kpis";
 import { ppDelta, relDelta } from "../lib/delta";
 import { Panel } from "../components/Panel";
 import { Columns, Legend, ShareBar } from "../components/Charts";
-import { dayPoints, ModelPanel, startOfDay } from "./panels";
+import { bucketing, dayPoints, ModelPanel } from "./panels";
 import { TodayLive } from "./TodayLive";
 
 
@@ -41,11 +41,14 @@ export function summaryKpis(data: DashboardData, budget: number | null): Kpi[] {
 export function DailyByAgent({ data, height = 250 }: { data: DashboardData; height?: number }) {
   const order = data.agents.map((a) => a.key);
   const color = (key: string) => agentColor(key, Math.max(order.indexOf(key), 0));
+  const b = bucketing(data.daily, data.filter);
   const byDay = new Map<number, { key: string; label: string; value: number; color: string }[]>();
   for (const s of data.dailyByAgent) {
-    const day = startOfDay(s.ts);
+    const day = b.key(s.ts);
     const list = byDay.get(day) ?? [];
-    list.push({ key: s.key, label: s.label, value: s.costUsd, color: color(s.key) });
+    const cur = list.find((x) => x.key === s.key);
+    if (cur) cur.value += s.costUsd;
+    else list.push({ key: s.key, label: s.label, value: s.costUsd, color: color(s.key) });
     byDay.set(day, list);
   }
   // Leyenda: los agentes que aparecen en el gráfico, con su total del periodo.
@@ -69,7 +72,7 @@ export function DailyByAgent({ data, height = 250 }: { data: DashboardData; heig
       stack,
       tooltip: (
         <>
-          <b>{fmt.date(d.ts)}</b>
+          <b>{b.label(d.ts)}</b>
           <div>{fmt.usd(value)}</div>
           {stack.map((x) => (
             <div key={x.key} className="muted">

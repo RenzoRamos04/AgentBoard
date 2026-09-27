@@ -16,6 +16,7 @@ export const fmt = {
     n >= 1000 ? `$${compact.format(n)}` : Number.isInteger(n) ? `$${n}` : `$${n.toFixed(2)}`,
   pct: (n: number) => pct.format(n),
   date: (ts: number) => new Date(ts).toLocaleDateString(locale(), { day: "numeric", month: "short", year: "numeric" }),
+  monthYear: (ts: number) => new Date(ts).toLocaleDateString(locale(), { month: "short", year: "numeric" }),
   dateTime: (ts: number) =>
     new Date(ts).toLocaleString(locale(), { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }),
   time: (ts: number) => new Date(ts).toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit" }),
