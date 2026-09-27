@@ -24,7 +24,12 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             db::remove_legacy_db();
-            let db = Arc::new(Mutex::new(db::open_in_memory()?));
+            let conn = db::open_in_memory()?;
+            // Precios fijados por el usuario en Ajustes, encima de los de por defecto.
+            if let Err(e) = pricing::apply_overrides(&conn, &settings::load().price_overrides) {
+                eprintln!("agentboard: no se pudieron aplicar los precios del usuario: {e:#}");
+            }
+            let db = Arc::new(Mutex::new(conn));
             let alerts = Alerts::new();
             app.manage(AppState {
                 db: db.clone(),
@@ -89,6 +94,7 @@ pub fn run() {
             commands::export_data,
             commands::list_sessions,
             commands::get_session_detail,
+            commands::list_prices,
             commands::get_settings,
             commands::set_settings,
         ])

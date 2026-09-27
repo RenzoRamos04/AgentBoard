@@ -4,8 +4,12 @@
 //! escritura de caché = 1,25× entrada (5 min) y 2× entrada (1 h). Los de OpenAI y Gemini
 //! son aproximados. Una fase posterior los actualizará desde LiteLLM sin reimportar.
 
+use crate::queries::Filter;
+use crate::settings::PriceOverride;
 use anyhow::Result;
-use rusqlite::{params, Connection};
+use rusqlite::{params, params_from_iter, Connection};
+use serde::Serialize;
+use std::collections::{HashMap, HashSet};
 
 /// (modelo, entrada, salida, lectura de caché, escritura 5 min, escritura 1 h)
 pub const DEFAULT_PRICES: &[(&str, f64, f64, f64, f64, f64)] = &[
@@ -65,6 +69,126 @@ pub fn seed_if_empty(conn: &Connection) -> Result<()> {
     }
     tx.commit()?;
     Ok(())
+}
+
+/// Vuelve a los precios por defecto y aplica encima los del usuario: cada precio del usuario
+/// sustituye a todos los del modelo (para todas las fechas). Los costes se recalculan solos
+/// porque `call_costs` es una vista.
+pub fn apply_overrides(conn: &Connection, overrides: &[PriceOverride]) -> Result<()> {
+    let tx = conn.unchecked_transaction()?;
+    tx.execute("DELETE FROM prices", [])?;
+    {
+        let mut insert = tx.prepare(
+            "INSERT INTO prices (model, valid_from, input, output, cache_read, cache_write, cache_write_1h)
+             VALUES (?1, 0, ?2, ?3, ?4, ?5, ?6)",
+        )?;
+        for (model, i, o, cr, cw, cw1h) in DEFAULT_PRICES {
+            insert.execute(params![model, i, o, cr, cw, cw1h])?;
+        }
+        let mut delete = tx.prepare("DELETE FROM prices WHERE model = ?1")?;
+        for p in overrides {
+            let model = normalize_model(&p.model);
+            delete.execute(params![model])?;
+            insert.execute(params![
+                model,
+                p.input,
+                p.output,
+                p.cache_read,
+                p.cache_write,
+                p.cache_write_1h
+            ])?;
+        }
+    }
+    tx.commit()?;
+    Ok(())
+}
+
+#[derive(Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PriceRow {
+    pub model: String,
+    /// `[entrada, salida, lectura caché, escritura 5 min, escritura 1 h]`; `None` si no hay precio.
+    pub prices: Option<[f64; 5]>,
+    /// `default`, `edited`, `reported` (coste del agente) o `missing`.
+    pub source: String,
+    /// Llamadas y coste en el filtro (0 si el modelo no se usó).
+    pub calls: i64,
+    pub cost_usd: f64,
+}
+
+/// Modelos usados en el filtro (sin precio primero, luego por llamadas) y después el resto con precio.
+pub fn list_prices(
+    conn: &Connection,
+    f: &Filter,
+    overrides: &[PriceOverride],
+) -> Result<Vec<PriceRow>> {
+    let edited: HashSet<String> = overrides
+        .iter()
+        .map(|p| normalize_model(&p.model))
+        .collect();
+    let mut table: HashMap<String, [f64; 5]> = HashMap::new();
+    let mut stmt = conn.prepare(
+        "SELECT model, input, output, cache_read, cache_write, cache_write_1h FROM prices p
+         WHERE valid_from = (SELECT MAX(valid_from) FROM prices WHERE model = p.model)",
+    )?;
+    let mut rows = stmt.query([])?;
+    while let Some(r) = rows.next()? {
+        table.insert(
+            r.get(0)?,
+            [r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?],
+        );
+    }
+    let source = |model: &str, reported: bool| -> &'static str {
+        if edited.contains(model) {
+            "edited"
+        } else if table.contains_key(model) {
+            "default"
+        } else if reported {
+            "reported"
+        } else {
+            "missing"
+        }
+    };
+
+    let (w, args) = f.sql("c.ts");
+    let mut stmt = conn.prepare(&format!(
+        "SELECT c.model, COUNT(*), SUM(c.cost_usd), MAX(c.cost_reported IS NOT NULL)
+         FROM call_costs c JOIN sessions s ON s.id = c.session_id WHERE {w} GROUP BY 1"
+    ))?;
+    let mut used: Vec<PriceRow> = stmt
+        .query_map(params_from_iter(args.iter()), |r| {
+            let model: String = r.get(0)?;
+            let reported: bool = r.get(3)?;
+            Ok(PriceRow {
+                prices: table.get(&model).copied(),
+                source: source(&model, reported).to_string(),
+                calls: r.get(1)?,
+                cost_usd: r.get(2)?,
+                model,
+            })
+        })?
+        .collect::<rusqlite::Result<_>>()?;
+    used.sort_by(|a, b| {
+        (b.source == "missing")
+            .cmp(&(a.source == "missing"))
+            .then(b.calls.cmp(&a.calls))
+            .then(a.model.cmp(&b.model))
+    });
+    let seen: HashSet<String> = used.iter().map(|r| r.model.clone()).collect();
+    let mut rest: Vec<PriceRow> = table
+        .iter()
+        .filter(|(m, _)| !seen.contains(*m))
+        .map(|(m, p)| PriceRow {
+            model: m.clone(),
+            prices: Some(*p),
+            source: source(m, false).to_string(),
+            calls: 0,
+            cost_usd: 0.0,
+        })
+        .collect();
+    rest.sort_by(|a, b| a.model.cmp(&b.model));
+    used.extend(rest);
+    Ok(used)
 }
 
 /// Nombre canónico para buscar precio: sin prefijo de proveedor, sin sufijo de fecha
@@ -213,5 +337,75 @@ mod tests {
         assert_eq!(normalize_model("claude-opus-4.7"), "claude-opus-4-7");
         assert_eq!(normalize_model("claude-sonnet-4.5-1m"), "claude-sonnet-4-5");
         assert_eq!(normalize_model("gpt-5.3-codex"), "gpt-5.3-codex");
+    }
+
+    fn price(model: &str, input: f64) -> PriceOverride {
+        PriceOverride {
+            model: model.into(),
+            input,
+            output: 0.0,
+            cache_read: 0.0,
+            cache_write: 0.0,
+            cache_write_1h: 0.0,
+        }
+    }
+
+    #[test]
+    fn precio_del_usuario_completa_y_sustituye() {
+        let conn = db::open_in_memory().unwrap();
+        insert_call(&conn, "a", "kimi-k2", 1_000_000, 0);
+        insert_call(&conn, "b", "claude-sonnet-4-5", 1_000_000, 0);
+        assert_eq!(cost(&conn, "a"), 0.0);
+        apply_overrides(
+            &conn,
+            &[price("kimi-k2", 1.0), price("claude-sonnet-4-5", 2.0)],
+        )
+        .unwrap();
+        assert!(
+            (cost(&conn, "a") - 1.0).abs() < 1e-9,
+            "modelo sin precio completado"
+        );
+        assert!(
+            (cost(&conn, "b") - 2.0).abs() < 1e-9,
+            "sustituye al de por defecto"
+        );
+        // Restablecer: sin precios del usuario vuelve el de por defecto (3 USD) y kimi a 0.
+        apply_overrides(&conn, &[]).unwrap();
+        assert!((cost(&conn, "b") - 3.0).abs() < 1e-9);
+        assert_eq!(cost(&conn, "a"), 0.0);
+    }
+
+    #[test]
+    fn listado_de_precios_con_origen() {
+        let conn = db::open_in_memory().unwrap();
+        insert_call(&conn, "a", "kimi-k2", 10, 0);
+        insert_call(&conn, "b", "claude-sonnet-4-5", 10, 0);
+        insert_call(&conn, "c", "claude-sonnet-4-5", 10, 0);
+        insert_call(&conn, "d", "big-pickle", 10, 0);
+        conn.execute(
+            "UPDATE calls SET cost_reported = 0.01 WHERE message_id = 'd'",
+            [],
+        )
+        .unwrap();
+        let overrides = [price("claude-haiku-4-5", 0.5)];
+        apply_overrides(&conn, &overrides).unwrap();
+        let rows = list_prices(&conn, &Filter::default(), &overrides).unwrap();
+        let by = |m: &str| rows.iter().find(|r| r.model == m).unwrap();
+        assert_eq!(rows[0].model, "kimi-k2", "sin precio, primero");
+        assert_eq!(by("kimi-k2").source, "missing");
+        assert_eq!(by("big-pickle").source, "reported");
+        assert_eq!(
+            (
+                by("claude-sonnet-4-5").source.as_str(),
+                by("claude-sonnet-4-5").calls
+            ),
+            ("default", 2)
+        );
+        assert_eq!(by("claude-haiku-4-5").source, "edited");
+        assert_eq!(by("claude-haiku-4-5").prices.unwrap()[0], 0.5);
+        assert!(
+            rows.len() > 4,
+            "incluye también los modelos con precio no usados"
+        );
     }
 }

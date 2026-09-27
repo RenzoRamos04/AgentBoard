@@ -7,7 +7,7 @@
 //! Registro (ejemplo Claude Code):
 //!   claude mcp add agentboard -- /ruta/a/agentboard-mcp
 
-use agentboard_lib::{db, ingest, providers, queries, sessions};
+use agentboard_lib::{db, ingest, pricing, providers, queries, sessions, settings};
 use anyhow::{anyhow, bail, Result};
 use chrono::{Offset, Timelike};
 use rusqlite::Connection;
@@ -52,6 +52,8 @@ fn main() {
 /// Lee el historial del disco a una base en memoria (una sola vez, al arrancar).
 fn scan() -> Result<Connection> {
     let mut conn = db::open_in_memory()?;
+    // Mismos precios que la app: los de por defecto más los que fijó el usuario en Ajustes.
+    pricing::apply_overrides(&conn, &settings::load().price_overrides)?;
     ingest::scan_all(&mut conn, &providers::all())?;
     Ok(conn)
 }

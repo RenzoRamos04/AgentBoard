@@ -142,6 +142,17 @@ pub fn get_session_detail(state: tauri::State<AppState>, id: String) -> CmdResul
 }
 
 #[tauri::command]
+pub fn list_prices(
+    state: tauri::State<AppState>,
+    filter: Option<Filter>,
+) -> CmdResult<Vec<crate::pricing::PriceRow>> {
+    let overrides = settings::load().price_overrides;
+    with_db(&state, |c| {
+        crate::pricing::list_prices(c, &filter.unwrap_or_default(), &overrides)
+    })
+}
+
+#[tauri::command]
 pub fn get_settings() -> CmdResult<Settings> {
     Ok(settings::load())
 }
@@ -150,5 +161,10 @@ pub fn get_settings() -> CmdResult<Settings> {
 pub fn set_settings(state: tauri::State<AppState>, settings: Settings) -> CmdResult<Settings> {
     settings::save(&settings).map_err(|e| format!("{e:#}"))?;
     state.alerts.reset(); // al cambiar el presupuesto se vuelven a permitir los avisos
-    Ok(settings::load())
+    let saved = settings::load();
+    // Los precios del usuario recalculan los costes al momento (sin releer logs).
+    with_db(&state, |c| {
+        crate::pricing::apply_overrides(c, &saved.price_overrides)
+    })?;
+    Ok(saved)
 }
