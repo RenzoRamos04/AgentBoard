@@ -25,6 +25,7 @@ interface Props {
   setCompare: (v: boolean) => void;
   /** `false` con «Todo», que no tiene periodo anterior. */
   canCompare: boolean;
+  onSearch: () => void;
 }
 
 /** «hace 12 s», «hace 3 min»… a partir de la hora de la última relectura. */
@@ -145,6 +146,12 @@ export function Topbar(p: Props) {
         <span className="live-dot" />
         <span>{ago ? t("En vivo · {ago}", { ago }) : t("En vivo")}</span>
       </div>
+
+      <button type="button" className="chip-button search-button" onClick={p.onSearch} aria-label={t("Buscar")} aria-keyshortcuts="Control+K">
+        <SearchIcon />
+        <span>{t("Buscar…")}</span>
+        <kbd>Ctrl K</kbd>
+      </button>
 
       <Popover ariaLabel={t("Exportar")} align="right" chevron={false} className="icon-only" label={<DownloadIcon />}>
         {(close) => (

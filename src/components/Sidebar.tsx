@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { fmt } from "../lib/format";
 import { GROUPS, SECTIONS, type SectionId } from "../lib/sections";
 import { GearIcon, LockIcon, PanelIcon, SectionIcon } from "./Icons";
 import { t } from "../lib/i18n";
@@ -11,6 +12,9 @@ interface Props {
   section: SectionId;
   setSection: (s: SectionId) => void;
   onSettings: () => void;
+  /** Agentes detectados y sesiones leídas, para el pie. */
+  agents: number;
+  sessions: number | null;
 }
 
 const COLLAPSE_KEY = "agentboard.sidebarCollapsed";
@@ -47,6 +51,7 @@ export function Sidebar(p: Props) {
         <img className="brand-logo logo-dark" src={logo1x} srcSet={`${logo1x} 1x, ${logo2x} 2x`} alt="" width={34} height={34} />
         <img className="brand-logo logo-light" src={light1x} srcSet={`${light1x} 1x, ${light2x} 2x`} alt="" width={34} height={34} />
         <span className="brand-name">AgentBoard</span>
+        <span className="brand-version">V2</span>
         <button
           type="button"
           className="sidebar-toggle"
@@ -73,20 +78,28 @@ export function Sidebar(p: Props) {
               >
                 <SectionIcon id={s.id} />
                 <span className="nav-label">{t(s.title)}</span>
+                {s.isNew && <span className="nav-new">{t("nuevo")}</span>}
               </button>
             ))}
+            {g.id === "configuracion" && (
+              <button className="nav-item" onClick={p.onSettings} title={t("Ajustes")} aria-label={t("Ajustes")}>
+                <GearIcon />
+                <span className="nav-label">{t("Ajustes")}</span>
+              </button>
+            )}
           </div>
         ))}
       </nav>
 
-      <div className="sidebar-foot">
-        <button className="nav-item" onClick={p.onSettings} title={t("Ajustes")} aria-label={t("Ajustes")}>
-          <GearIcon />
-          <span className="nav-label">{t("Ajustes")}</span>
-        </button>
-        <div className="local-note" title={t("Los datos se leen de los logs y viven en memoria; nada sale del equipo.")}>
+      <div className="sidebar-foot" title={t("Los datos se leen de los logs y viven en memoria; nada sale del equipo.")}>
+        <div className="local-note">
           <LockIcon />
           <span className="nav-label">{t("Local · en memoria")}</span>
+        </div>
+        <div className="foot-stats nav-label num">
+          {p.sessions == null
+            ? t("{n} agentes", { n: p.agents })
+            : t("{n} agentes · {m} sesiones leídas", { n: p.agents, m: fmt.int(p.sessions) })}
         </div>
       </div>
     </aside>

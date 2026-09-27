@@ -207,6 +207,9 @@ export interface Settings {
   dailyBudget: number | null;
   budgets: ScopedBudget[];
   priceOverrides: PriceOverride[];
+  alertAt80: boolean;
+  alertAt100: boolean;
+  trayShowsToday: boolean;
 }
 
 export type PriceSource = "default" | "edited" | "reported" | "missing";

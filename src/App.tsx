@@ -15,6 +15,8 @@ import { Section } from "./views/Section";
 import { Sessions } from "./views/Sessions";
 import { SessionDetail } from "./views/SessionDetail";
 import { Pricing } from "./views/Pricing";
+import { Heatmap } from "./views/Heatmap";
+import { CommandPalette } from "./components/CommandPalette";
 
 /** Idioma recordado en este equipo, para pintar bien antes de leer los ajustes. */
 function storedLang(): LangSetting {
@@ -41,10 +43,13 @@ export default function App() {
   const [hiddenProjects, setHiddenProjects] = useState<Set<number>>(new Set());
   const [agents, setAgents] = useState<AgentRow[]>([]);
   const [projects, setProjects] = useState<ProjectRow[]>([]);
-  const [settings, setSettings] = useState<Settings>({ theme: storedTheme(), language: storedLang(), monthlyBudget: null, dailyBudget: null, budgets: [], priceOverrides: [] });
+  const [settings, setSettings] = useState<Settings>({ theme: storedTheme(), language: storedLang(), monthlyBudget: null, dailyBudget: null, budgets: [], priceOverrides: [], alertAt80: true, alertAt100: true, trayShowsToday: false });
   const lang = resolveLang(settings.language);
   setLang(lang);
   const [showSettings, setShowSettings] = useState(false);
+  const [showPalette, setShowPalette] = useState(false);
+  // Sesiones leídas en total (pie del panel lateral).
+  const [totalSessions, setTotalSessions] = useState<number | null>(null);
   const [refresh, setRefresh] = useState(0);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [live, setLive] = useState(false);
@@ -82,6 +87,22 @@ export default function App() {
     api.agents(range).then(setAgents).catch((e) => setLoadError(String(e)));
     api.projects(scope).then(setProjects).catch((e) => setLoadError(String(e)));
   }, [range, filter.agents?.join(","), refresh]);
+
+  useEffect(() => {
+    api.summary({}).then((s) => setTotalSessions(s.sessions)).catch(() => setTotalSessions(null));
+  }, [refresh]);
+
+  // Ctrl+K / Cmd+K abre el buscador.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setShowPalette((v) => !v);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   useEffect(() => applyTheme(settings.theme), [settings.theme]);
   useEffect(() => {
@@ -157,6 +178,7 @@ export default function App() {
     content = <Pricing filter={filter} refresh={refresh} settings={settings} onSave={saveSettings} agents={agents} />;
   else if (error) content = <div className="main error">{t("No se pudieron cargar los datos: {e}", { e: error })}</div>;
   else if (!data) content = <div className="main muted">{t("Cargando…")}</div>;
+  else if (section === "heatmap") content = <Heatmap data={data} period={period} />;
   else if (section === "overview")
     content = <Overview data={data} period={period} budget={settings.monthlyBudget} singleProject={singleProject} open={setSection} />;
   else content = <Section id={section} data={data} period={period} singleProject={singleProject} back={() => setSection("overview")} />;
@@ -166,7 +188,7 @@ export default function App() {
     <TooltipProvider>
       {/* Al cambiar de idioma se vuelve a montar todo con las cadenas nuevas. */}
       <div className="app" key={lang}>
-        <Sidebar section={section} setSection={setSection} onSettings={() => setShowSettings(true)} />
+        <Sidebar section={section} setSection={setSection} onSettings={() => setShowSettings(true)} agents={agents.length} sessions={totalSessions} />
         <div className="content">
           {loadError && (
             <div className="notice warn banner">
@@ -189,11 +211,26 @@ export default function App() {
             compare={compare}
             setCompare={setCompare}
             canCompare={previousRange(period) != null}
+            onSearch={() => setShowPalette(true)}
             onExport={doExport}
           />
           {content}
         </div>
       </div>
+      {showPalette && (
+        <CommandPalette
+          filter={filter}
+          projects={projects}
+          onClose={() => setShowPalette(false)}
+          goSection={setSection}
+          onlyProject={(id) => onlyProject(id)}
+          openSession={(id) => {
+            setSectionState("sessions");
+            setSessionId(id);
+          }}
+          openSettings={() => setShowSettings(true)}
+        />
+      )}
       {showSettings && <SettingsDialog settings={settings} onSave={saveSettings} onClose={() => setShowSettings(false)} onExport={doExport} />}
     </TooltipProvider>
     </LangContext.Provider>
