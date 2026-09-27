@@ -161,7 +161,11 @@ export default function App() {
     return prev ? { ...filter, ...prev } : null;
   }, [compare, period, filter]);
   const { data, error } = useDashboardData(filter, singleProject, refresh, prevFilter);
-  const saveSettings = async (s: Settings) => setSettings(await api.saveSettings(s));
+  const saveSettings = async (s: Settings) => {
+    setSettings(await api.saveSettings(s));
+    // El backend recalcula los costes (precios, presupuestos…): invalida lo ya cargado.
+    setRefresh((n) => n + 1);
+  };
 
   const doExport = async (format: "csv" | "json") => {
     try {
