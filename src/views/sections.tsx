@@ -390,11 +390,18 @@ export const ShellFull = ({ data }: { data: DashboardData }) => (
 );
 export const McpFull = ({ data }: { data: DashboardData }) => <UsesFull rows={data.mcp} header="Servidor" plural="{n} servidores" others="Otros servidores" color="var(--series-magenta)" data={data} />;
 
-function CostUsesFull({ rows, header, usesHeader, color, hint, othersLabel = "Otros" }: { rows: BreakdownRow[]; header: string; usesHeader: string; color: string; hint?: string; othersLabel?: string }) {
+function CostUsesFull({ rows, header, usesHeader, color, hint, othersLabel = "Otros", agentName }: { rows: BreakdownRow[]; header: string; usesHeader: string; color: string; hint?: string; othersLabel?: string; agentName?: (id: string) => string }) {
   const rc = rowColor(rows);
   const usesMetric = { ...M.uses, label: usesHeader };
+  // Con filas de varios agentes (tipos de subagente), cada fila dice de qué agente es.
+  const withAgent = agentName && rows.some((r) => r.agent);
+  const kind = (r: BreakdownRow) => (r.label === "(sin tipo)" ? t(r.label) : r.label);
+  const label = (r: BreakdownRow) => (withAgent && r.agent ? `${kind(r)} · ${agentName!(r.agent)}` : r.label);
   const columns: Column<BreakdownRow>[] = [
-    { header: t(header), cell: (r) => <span className="with-dot"><i style={{ background: rc(r) }} />{r.label}</span> },
+    { header: t(header), cell: (r) => <span className="with-dot"><i style={{ background: rc(r) }} />{withAgent ? kind(r) : r.label}</span> },
+    ...(withAgent
+      ? [{ header: t("Agente"), cell: (r: BreakdownRow) => (r.agent ? <AgentTag id={r.agent} name={agentName!(r.agent)} /> : "–"), width: "minmax(120px, 0.7fr)" }]
+      : []),
     { header: t(usesHeader), cell: (r) => fmt.int(r.calls), align: "right" },
     { header: t("Coste"), cell: (r) => cost(r.costUsd), align: "right", className: "cost" },
     { header: t("$/uso"), cell: (r) => cost(r.calls ? r.costUsd / r.calls : 0), align: "right", width: "72px", className: "secondary" },
@@ -406,16 +413,30 @@ function CostUsesFull({ rows, header, usesHeader, color, hint, othersLabel = "Ot
         <DataTable rows={rows} rowKey={(r) => r.key} columns={columns} />
       </Card>
       <div className="grid-2">
-        <ShareCard title={t("Reparto del coste")} rows={rows} label={(r) => r.label} color={rc} metric={M.cost} />
-        <RankingCard title={t("Ranking")} rows={rows} label={(r) => r.label} color={rc} metrics={[M.cost, usesMetric]} othersLabel={t(othersLabel)} />
+        <ShareCard title={t("Reparto del coste")} rows={rows} label={label} color={rc} metric={M.cost} />
+        <RankingCard title={t("Ranking")} rows={rows} label={label} color={rc} metrics={[M.cost, usesMetric]} othersLabel={t(othersLabel)} />
       </div>
     </>
   );
 }
 
+/** Nombre y color de un agente a partir de su id. */
+export const AgentTag = ({ id, name }: { id: string; name: string }) => (
+  <span className="with-dot">
+    <i style={{ background: agentColor(id) }} />
+    {name}
+  </span>
+);
+
+/** Nombre de agente por id, con los agentes del panel (o el id si no está). */
+export const agentNamer = (data: DashboardData) => {
+  const names = new Map(data.agents.map((a) => [a.key, a.label]));
+  return (id: string) => names.get(id) ?? id;
+};
+
 export const SkillsFull = ({ data }: { data: DashboardData }) => (
   <CostUsesFull rows={data.skills} header="Skill / agente" usesHeader="Usos" color="var(--series-violet)" hint="coste de las respuestas del modelo que los invocaron" othersLabel="Otras skills y agentes" />
 );
 export const AgentTypesFull = ({ data }: { data: DashboardData }) => (
-  <CostUsesFull rows={data.agentTypes} header="Tipo" usesHeader="Llamadas" color="var(--series-blue)" hint="llamadas hechas dentro de subagentes, por tipo" othersLabel="Otros tipos" />
+  <CostUsesFull rows={data.agentTypes} header="Tipo" usesHeader="Llamadas" color="var(--series-blue)" hint="llamadas hechas dentro de subagentes de cada agente, por tipo" othersLabel="Otros tipos" agentName={agentNamer(data)} />
 );

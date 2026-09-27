@@ -393,6 +393,9 @@ const en: Dict = {
   "Importante": "Important",
   "Aviso": "Warning",
   "Información": "Info",
+  "¿Cuánto cuestan los subagentes de cada agente?": "How much do each agent's subagents cost?",
+  "llamadas hechas dentro de subagentes de cada agente, por tipo": "calls made inside each agent's subagents, by type",
+  "(sin tipo)": "(no type)",
 };
 
 const pt: Dict = {
@@ -747,6 +750,9 @@ const pt: Dict = {
   "Importante": "Importante",
   "Aviso": "Aviso",
   "Información": "Informação",
+  "¿Cuánto cuestan los subagentes de cada agente?": "Quanto custam os subagentes de cada agente?",
+  "llamadas hechas dentro de subagentes de cada agente, por tipo": "chamadas feitas dentro dos subagentes de cada agente, por tipo",
+  "(sin tipo)": "(sem tipo)",
 };
 
 const fr: Dict = {
@@ -1101,6 +1107,9 @@ const fr: Dict = {
   "Importante": "Important",
   "Aviso": "Avertissement",
   "Información": "Information",
+  "¿Cuánto cuestan los subagentes de cada agente?": "Combien coûtent les sous-agents de chaque agent ?",
+  "llamadas hechas dentro de subagentes de cada agente, por tipo": "appels effectués dans les sous-agents de chaque agent, par type",
+  "(sin tipo)": "(sans type)",
 };
 
 const DICTS: Record<Lang, Dict> = { es: {}, en, pt, fr };

@@ -465,7 +465,7 @@ export const ToolsPanel = ({ data, full }: PanelProps) => <UsesPanel rows={data.
 export const ShellPanel = ({ data, full }: PanelProps) => <UsesPanel rows={data.commands} full={full} header="Comando" color="var(--series-yellow)" mono />;
 export const McpPanel = ({ data, full }: PanelProps) => <UsesPanel rows={data.mcp} full={full} header="Servidor" color="var(--series-magenta)" />;
 
-// --- Skills & Agents / Claude Agent Types (usos y coste) ---------------------------------
+// --- Skills & Agents / Agent Types (usos y coste) ---------------------------------
 
 function CostUsesPanel({ rows, full, header, usesHeader, color }: { rows: BreakdownRow[]; full: boolean; header: string; usesHeader: string; color: string }) {
   const columns: Column<BreakdownRow>[] = [
@@ -478,7 +478,29 @@ function CostUsesPanel({ rows, full, header, usesHeader, color }: { rows: Breakd
 }
 
 export const SkillsPanel = ({ data, full }: PanelProps) => <CostUsesPanel rows={data.skills} full={full} header="Skill / agente" usesHeader="Usos" color="var(--series-violet)" />;
-export const AgentTypesPanel = ({ data, full }: PanelProps) => <CostUsesPanel rows={data.agentTypes} full={full} header="Tipo" usesHeader="Llamadas" color="var(--series-blue)" />;
+export function AgentTypesPanel({ data, full }: PanelProps) {
+  const names = new Map(data.agents.map((a) => [a.key, a.label]));
+  const rows = data.agentTypes;
+  const columns: Column<BreakdownRow>[] = [
+    { header: t("Tipo"), cell: (r) => (r.label === "(sin tipo)" ? t(r.label) : r.label) },
+    {
+      header: t("Agente"),
+      cell: (r) =>
+        r.agent ? (
+          <span className="with-dot">
+            <i style={{ background: agentColor(r.agent) }} />
+            {names.get(r.agent) ?? r.agent}
+          </span>
+        ) : (
+          "–"
+        ),
+    },
+    { header: t("Llamadas"), cell: (r) => fmt.int(r.calls), align: "right", width: "64px" },
+    { header: t("Coste"), cell: (r) => cost(r.costUsd), align: "right", className: "cost" },
+    barColumn(t("Reparto del coste"), rows, (r) => r.costUsd, "var(--series-blue)"),
+  ];
+  return <DataTable rows={rows} rowKey={(r) => r.key} columns={columns} limit={full ? undefined : PREVIEW} />;
+}
 
 // --- Auxiliares --------------------------------------------------------------------
 

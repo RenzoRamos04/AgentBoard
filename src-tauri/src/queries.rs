@@ -292,6 +292,9 @@ pub struct BreakdownRow {
     pub sessions: i64,
     /// Media de tokens de contexto de la primera llamada de cada sesión.
     pub overhead_tokens: f64,
+    /// Agente al que pertenece la fila, en los desgloses que mezclan agentes (tipos de subagente).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent: Option<String>,
 }
 
 impl BreakdownRow {
@@ -307,6 +310,7 @@ impl BreakdownRow {
             has_price: true,
             sessions: 0,
             overhead_tokens: 0.0,
+            agent: None,
         }
     }
 }
@@ -385,6 +389,7 @@ pub fn breakdown(conn: &Connection, f: &Filter, by: &str) -> Result<Vec<Breakdow
                 has_price: r.get(7)?,
                 sessions: r.get(8)?,
                 overhead_tokens: r.get(9)?,
+                agent: None,
             })
         })?
         .collect::<rusqlite::Result<_>>()?;

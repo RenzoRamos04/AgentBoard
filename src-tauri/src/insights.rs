@@ -217,28 +217,27 @@ pub fn mcp_servers(conn: &Connection, f: &Filter) -> Result<Vec<BreakdownRow>> {
     ))
 }
 
-/// Llamadas hechas dentro de subagentes, por tipo de subagente.
+/// Llamadas hechas dentro de subagentes, por agente y tipo de subagente (de todos los agentes).
 pub fn agent_types(conn: &Connection, f: &Filter) -> Result<Vec<BreakdownRow>> {
     let (w, args) = f.sql("c.ts");
     let mut stmt = conn.prepare(&format!(
-        "SELECT COALESCE(a.detail, 'desconocido'), COUNT(*), SUM(c.cost_usd)
+        "SELECT s.agent_id, COALESCE(a.detail, '(sin tipo)'), COUNT(*), SUM(c.cost_usd)
          FROM call_costs c JOIN sessions s ON s.id = c.session_id
          LEFT JOIN (SELECT agent_id, MIN(detail) AS detail FROM tool_calls
                     WHERE agent_id IS NOT NULL GROUP BY agent_id) a ON a.agent_id = c.agent_id
-         WHERE {w} AND c.is_sidechain = 1 GROUP BY 1"
+         WHERE {w} AND c.is_sidechain = 1 GROUP BY 1, 2"
     ))?;
-    let rows = stmt
+    let mut rows: Vec<BreakdownRow> = stmt
         .query_map(params_from_iter(args.iter()), |r| {
-            Ok(BreakdownRow::simple(
-                r.get::<_, String>(0)?,
-                r.get(1)?,
-                0,
-                r.get(2)?,
-            ))
+            let agent: String = r.get(0)?;
+            let kind: String = r.get(1)?;
+            let mut row = BreakdownRow::simple(format!("{agent}:{kind}"), r.get(2)?, 0, r.get(3)?);
+            row.label = kind;
+            row.agent = Some(agent);
+            Ok(row)
         })?
         .collect::<rusqlite::Result<_>>()?;
-    let mut rows: Vec<BreakdownRow> = rows;
-    rows.sort_by(|a, b| b.cost_usd.total_cmp(&a.cost_usd));
+    rows.sort_by(|a, b| b.cost_usd.total_cmp(&a.cost_usd).then(a.key.cmp(&b.key)));
     Ok(rows)
 }
 
@@ -627,5 +626,35 @@ mod tests {
         )
         .is_one_shot());
         assert!(!turn(None, &[("Edit", "a.rs", true)]).is_one_shot());
+    }
+
+    #[test]
+    fn tipos_de_subagente_de_todos_los_agentes() {
+        let conn = crate::db::open_in_memory().unwrap();
+        conn.execute_batch(
+            "INSERT INTO agents VALUES ('claude-code','Claude Code','/c',0),('opencode','OpenCode','/o',0);
+             INSERT INTO sessions (id,agent_id,started_at,ended_at) VALUES ('c','claude-code',0,0),('o','opencode',0,0);
+             INSERT INTO tool_calls (call_id,session_id,ts,tool,detail,agent_id) VALUES
+               ('u1','c',0,'Agent','Explore','a1'),('u2','c',0,'Agent','general','a2'),('u3','o',0,'Task','general','o1');
+             INSERT INTO calls (message_id,session_id,ts,model,is_sidechain,agent_id) VALUES
+               ('m1','c',1,'x',1,'a1'),('m2','c',2,'x',1,'a1'),('m3','c',3,'x',1,'a2'),
+               ('m4','o',4,'x',1,'o1'),('m5','o',5,'x',1,'huerfano'),('m6','o',6,'x',0,NULL);",
+        )
+        .unwrap();
+        let rows = agent_types(&conn, &Filter::default()).unwrap();
+        let get = |agent: &str, kind: &str| {
+            rows.iter()
+                .find(|r| r.agent.as_deref() == Some(agent) && r.label == kind)
+                .map(|r| r.calls)
+        };
+        assert_eq!(get("claude-code", "Explore"), Some(2));
+        assert_eq!(get("claude-code", "general"), Some(1));
+        assert_eq!(
+            get("opencode", "general"),
+            Some(1),
+            "mismo tipo, fila propia por agente"
+        );
+        assert_eq!(get("opencode", "(sin tipo)"), Some(1));
+        assert_eq!(rows.len(), 4, "las llamadas fuera de subagentes no cuentan");
     }
 }

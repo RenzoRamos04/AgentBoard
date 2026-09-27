@@ -20,7 +20,7 @@ y su gráfico, y una vista ampliada al pulsarlo. Todo respeta los filtros activo
 | **Shell Commands** | Comandos de shell más ejecutados. |
 | **Skills & Agents** | Skills y subagentes invocados. |
 | **MCP Servers** | Servidores MCP usados y su actividad. |
-| **Claude Agent Types** | Tipos de subagente de Claude Code y su coste. |
+| **Agent Types** | Subagentes de todos los agentes (Claude Code, Codex, Gemini, OpenCode, Cursor…), por agente y tipo, con su coste. |
 | **Precios y presupuestos** | Precios por modelo editables (origen: por defecto, editado, coste del agente o falta precio) y presupuestos mensual, diario y por proyecto o agente con su progreso. |
 
 ## Lo que deberías saber

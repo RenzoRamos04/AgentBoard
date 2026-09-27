@@ -234,7 +234,7 @@ fn tools_list() -> Vec<Value> {
         f("get_shell_commands", "Comandos de shell más ejecutados."),
         f("get_skills", "Skills y subagentes invocados."),
         f("get_mcp_servers", "Servidores MCP usados y su actividad."),
-        f("get_agent_types", "Tipos de subagente de Claude Code y su coste."),
+        f("get_agent_types", "Subagentes de todos los agentes (Claude Code, Codex, Gemini, OpenCode, Cursor…) por agente y tipo, con llamadas y coste."),
         f("get_daily", "Serie diaria: coste, llamadas, sesiones y tokens por día."),
         f("get_insights", "Avisos automáticos del periodo (compactaciones, modelo caro en tareas sencillas, herramientas que fallan, picos de gasto, caída del cache hit), del más grave al menos."),
         f("list_agents", "Agentes detectados en esta máquina, con su coste y carpeta de logs."),

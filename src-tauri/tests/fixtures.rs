@@ -126,7 +126,14 @@ fn claude_code_fixture() {
         "core tools sin MCP"
     );
     let agents = by("agent_type");
-    assert_eq!((agents[0].key.as_str(), agents[0].calls), ("Explore", 2));
+    assert_eq!(
+        (
+            agents[0].label.as_str(),
+            agents[0].agent.as_deref(),
+            agents[0].calls
+        ),
+        ("Explore", Some("claude-code"), 2)
+    );
     let projects = by("project");
     assert_eq!(projects[0].sessions, 1);
     assert_eq!(
@@ -216,7 +223,14 @@ fn opencode_fixture() {
         .unwrap();
     assert_eq!(name, "demo");
     let agents = queries::breakdown(&conn, &f, "agent_type").unwrap();
-    assert_eq!((agents[0].key.as_str(), agents[0].calls), ("explore", 1));
+    assert_eq!(
+        (
+            agents[0].label.as_str(),
+            agents[0].agent.as_deref(),
+            agents[0].calls
+        ),
+        ("explore", Some("opencode"), 1)
+    );
 
     // Segunda pasada sin cambios: no se procesa nada ni se duplica.
     let again = ingest::scan_all(&mut conn, &providers).unwrap();

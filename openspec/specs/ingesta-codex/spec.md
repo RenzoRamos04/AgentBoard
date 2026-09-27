@@ -31,4 +31,4 @@ Una sesión con `parent_thread_id` o `thread_source: subagent` SHALL marcarse co
 
 #### Scenario: Hilo hijo
 - **WHEN** un rollout tiene `parent_thread_id`
-- **THEN** sus llamadas aparecen en "Claude Agent Types" y no abren turnos
+- **THEN** sus llamadas aparecen en "Agent Types" y no abren turnos

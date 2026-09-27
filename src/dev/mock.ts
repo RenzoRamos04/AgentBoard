@@ -154,7 +154,13 @@ export function installMocks() {
           case "branch": return [row("main", 12.0, 500, 0, 5), row("feat/dashboard", 8.1, 300, 0, 3), row("fix/ingesta", 2.0, 100, 0, 1)];
           case "skill": return [row("general-purpose", 1.32, 5), row("code-reviewer", 0.541, 3), row("dataviz", 0.211, 1)];
           case "mcp": return [row("figma", 0, 23), row("claude_ai_Slack", 0, 5), row("claude_ai_Supabase", 0, 1)];
-          case "agent_type": return [row("general-purpose", 100.4, 1652), row("code-reviewer", 9.21, 104), row("Explore", 4.8, 82)];
+          case "agent_type": return [
+            { ...row("general-purpose", 100.4, 1652), key: "claude-code:general-purpose", agent: "claude-code" },
+            { ...row("general", 12.3, 210), key: "opencode:general", agent: "opencode" },
+            { ...row("code-reviewer", 9.21, 104), key: "claude-code:code-reviewer", agent: "claude-code" },
+            { ...row("worker", 6.1, 95), key: "codex:worker", agent: "codex" },
+            { ...row("Explore", 4.8, 82), key: "claude-code:Explore", agent: "claude-code" },
+          ];
           case "tool": return [row("Bash", 0, 1204, 96), row("Read", 0, 980, 4), row("Edit", 0, 702, 21), row("Grep", 0, 410, 0), row("Write", 0, 120, 2)].map((r) => ({ ...r, costUsd: 0 }));
           case "command": return [row("git", 0, 402, 3), row("cargo", 0, 310, 44), row("npm", 0, 280, 20), row("ls", 0, 150, 0), row("rg", 0, 62, 1)].map((r) => ({ ...r, costUsd: 0 }));
         }

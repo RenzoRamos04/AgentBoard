@@ -35,4 +35,4 @@ Las sesiones con `parent_id` SHALL marcarse como subagente y sus llamadas MUST c
 
 #### Scenario: Sesión hija
 - **WHEN** una sesión tiene `parent_id` no nulo
-- **THEN** sus llamadas aparecen en "Claude Agent Types" y no en el modelo principal de la sesión padre
+- **THEN** sus llamadas aparecen en "Agent Types" y no en el modelo principal de la sesión padre

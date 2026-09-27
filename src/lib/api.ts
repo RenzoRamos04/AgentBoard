@@ -54,6 +54,8 @@ export interface BreakdownRow {
   hasPrice: boolean;
   sessions: number;
   overheadTokens: number;
+  /** Agente de la fila, en desgloses que mezclan agentes (tipos de subagente). */
+  agent?: string;
 }
 
 export type BreakdownBy = "agent" | "project" | "branch" | "model" | "tool" | "command" | "skill" | "mcp" | "agent_type";
