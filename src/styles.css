@@ -446,3 +446,18 @@ svg .marker text { fill: var(--critical); font-family: var(--font-mono); font-si
 .scoped-add { grid-template-columns: 120px minmax(0, 1fr); }
 .scoped-add input { width: 100%; }
 .grid-pricing .toolbar .search { flex: 0 1 300px; }
+
+/* Lo que deberías saber */
+.insights { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.insight { display: flex; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--row-border); }
+.insights .insight:first-child { padding-top: 0; }
+.insights .insight:last-child { border-bottom: 0; }
+.insight-mark { width: 26px; height: 26px; flex-shrink: 0; border-radius: 7px; display: flex; align-items: center; justify-content: center; font-family: var(--font-mono); font-weight: 600; font-size: 13px; }
+.insight-mark.critical { background: color-mix(in srgb, var(--critical) 18%, transparent); color: var(--critical); }
+.insight-mark.warn { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
+.insight-mark.info { background: color-mix(in srgb, var(--link) 18%, transparent); color: var(--link); }
+.insight-mark.good { background: color-mix(in srgb, var(--good) 18%, transparent); color: var(--good); }
+.insight-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; font-size: 12.5px; }
+.insight-text > span { color: var(--text-secondary); line-height: 1.4; }
+.insight-text .link { align-self: flex-start; }
+.insight-ok { border-bottom: 0; }

@@ -167,6 +167,16 @@ export interface SessionDetail {
   tools: ToolStat[];
 }
 
+export type InsightKind = "compactions" | "expensive_model" | "tool_errors" | "spend_spike" | "cache_drop";
+
+export interface Insight {
+  kind: InsightKind;
+  severity: "critical" | "warn" | "info";
+  params: Record<string, string | number>;
+  /** Texto en español (el que usa el servidor MCP). */
+  message: string;
+}
+
 export type Theme = "system" | "light" | "dark";
 
 export type Language = "system" | "es" | "en" | "pt" | "fr";
@@ -222,6 +232,7 @@ export const api = {
   activityDaily: (filter: Filter) => invoke<ActivityDay[]>("get_activity_daily", { filter, tzOffsetMin: tzOffsetMin() }),
   agents: (filter: Filter) => invoke<AgentRow[]>("list_agents", { filter }),
   projects: (filter: Filter) => invoke<ProjectRow[]>("list_projects", { filter }),
+  insights: (filter: Filter) => invoke<Insight[]>("get_insights", { filter, tzOffsetMin: tzOffsetMin() }),
   prices: (filter: Filter) => invoke<PriceRow[]>("list_prices", { filter }),
   sessions: (filter: Filter, limit?: number) => invoke<SessionList>("list_sessions", { filter, limit }),
   sessionDetail: (id: string) => invoke<SessionDetail>("get_session_detail", { id }),

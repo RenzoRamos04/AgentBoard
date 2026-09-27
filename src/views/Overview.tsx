@@ -7,7 +7,8 @@ import { Kpis, type Kpi } from "../components/Kpis";
 import { ppDelta, relDelta } from "../lib/delta";
 import { Panel } from "../components/Panel";
 import { Columns, Legend, ShareBar } from "../components/Charts";
-import { AgentPanel, dayPoints, ModelPanel, ProjectPanel, startOfDay } from "./panels";
+import { dayPoints, ModelPanel, ProjectPanel, startOfDay } from "./panels";
+import { Insights } from "./Insights";
 
 
 export function periodLabel(period: Period) {
@@ -152,8 +153,8 @@ export function Overview({
         <Panel id="daily" title={t("Gasto diario")} question={data.prev ? t("por agente · línea discontinua = periodo anterior") : t("por agente")} onOpen={() => open("daily")} openLabel={t("Daily Activity ›")}>
           <DailyByAgent data={data} />
         </Panel>
-        <Panel id="agent" title="By Agent" question={t("¿Qué agente uso más?")} onOpen={() => open("agent")}>
-          <AgentPanel {...props} />
+        <Panel id="insights" title={t("Lo que deberías saber")} question={data.insights.length ? t("{n} avisos", { n: data.insights.length }) : undefined}>
+          <Insights items={data.insights} open={open} />
         </Panel>
       </div>
       <div className="grid-3">

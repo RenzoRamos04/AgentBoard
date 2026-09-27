@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, type ActivityDay, type ActivityReport, type BreakdownRow, type Filter, type Point, type SeriesPoint, type Summary } from "./api";
+import { api, type Insight, type ActivityDay, type ActivityReport, type BreakdownRow, type Filter, type Point, type SeriesPoint, type Summary } from "./api";
 import { monthStart } from "./period";
 
 export interface DashboardData {
@@ -29,6 +29,7 @@ export interface DashboardData {
   agentTypes: BreakdownRow[];
   /** Periodo anterior, solo con la comparación activa. */
   prev: PrevData | null;
+  insights: Insight[];
 }
 
 export interface PrevData {
@@ -73,10 +74,11 @@ export function useDashboardData(filter: Filter, singleProject: string | null, r
             ([summary, daily, projects]): PrevData => ({ filter: prevFilter, summary, daily, projects }),
           )
         : Promise.resolve(null),
+      api.insights(filter),
     ])
-      .then(([summary, agents, daily, hourly, dailyByAgent, dailyByModel, dailyByProject, dailyByTool, month, projects, branches, models, activity, activityDaily, tools, commands, skills, mcp, agentTypes, prev]) => {
+      .then(([summary, agents, daily, hourly, dailyByAgent, dailyByModel, dailyByProject, dailyByTool, month, projects, branches, models, activity, activityDaily, tools, commands, skills, mcp, agentTypes, prev, insights]) => {
         if (!alive) return;
-        setData({ filter, summary, agents, daily, hourly, dailyByAgent, dailyByModel, dailyByProject, dailyByTool, month, projects, branches, models, activity, activityDaily, tools, commands, skills, mcp, agentTypes, prev });
+        setData({ filter, summary, agents, daily, hourly, dailyByAgent, dailyByModel, dailyByProject, dailyByTool, month, projects, branches, models, activity, activityDaily, tools, commands, skills, mcp, agentTypes, prev, insights });
         setError(null);
       })
       .catch((e) => alive && setError(String(e)));
