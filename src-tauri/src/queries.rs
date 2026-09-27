@@ -901,8 +901,9 @@ mod export_tests {
     }
 }
 
-/// Gasto acumulado del mes en curso y proyección lineal a fin de mes (hora local del sistema).
-pub fn month_progress(conn: &Connection, f: &Filter) -> Result<(f64, f64)> {
+/// Inicio del mes local en curso (epoch ms) y factor de proyección lineal a fin de mes
+/// (`días del mes / días transcurridos`).
+pub fn month_factor() -> (i64, f64) {
     use chrono::{Datelike, Local, TimeZone};
     let now = Local::now();
     let start = Local
@@ -910,6 +911,24 @@ pub fn month_progress(conn: &Connection, f: &Filter) -> Result<(f64, f64)> {
         .single()
         .map(|d| d.timestamp_millis())
         .unwrap_or(0);
+    let (y, m) = if now.month() == 12 {
+        (now.year() + 1, 1)
+    } else {
+        (now.year(), now.month() + 1)
+    };
+    let next = Local
+        .with_ymd_and_hms(y, m, 1, 0, 0, 0)
+        .single()
+        .map(|d| d.timestamp_millis())
+        .unwrap_or(start + 30 * DAY_MS);
+    let days_in_month = (next - start) as f64 / DAY_MS as f64;
+    let day = now.day() as f64;
+    (start, if day > 0.0 { days_in_month / day } else { 1.0 })
+}
+
+/// Gasto acumulado del mes en curso y proyección lineal a fin de mes (hora local del sistema).
+pub fn month_progress(conn: &Connection, f: &Filter) -> Result<(f64, f64)> {
+    let (start, factor) = month_factor();
     let month = Filter {
         from: Some(start),
         to: None,
@@ -922,25 +941,5 @@ pub fn month_progress(conn: &Connection, f: &Filter) -> Result<(f64, f64)> {
         params_from_iter(args.iter()),
         |r| r.get(0),
     )?;
-    let day = now.day() as f64;
-    let days_in_month = {
-        let (y, m) = if now.month() == 12 {
-            (now.year() + 1, 1)
-        } else {
-            (now.year(), now.month() + 1)
-        };
-        (Local
-            .with_ymd_and_hms(y, m, 1, 0, 0, 0)
-            .single()
-            .unwrap()
-            .timestamp_millis()
-            - start) as f64
-            / 86_400_000.0
-    };
-    let projection = if day > 0.0 {
-        spent / day * days_in_month
-    } else {
-        spent
-    };
-    Ok((spent, projection))
+    Ok((spent, spent * factor))
 }
