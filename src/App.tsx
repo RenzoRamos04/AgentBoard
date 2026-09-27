@@ -30,9 +30,11 @@ function storedLang(): LangSetting {
 }
 
 export default function App() {
-  const [section, setSectionState] = useState<SectionId>("overview");
+  // En desarrollo, `?s=<apartado>&id=<sesión>` abre directamente esa vista (capturas de pantalla).
+  const devParams = import.meta.env.DEV ? new URLSearchParams(location.search) : null;
+  const [section, setSectionState] = useState<SectionId>(() => (devParams?.get("s") as SectionId | null) ?? "overview");
   // Sesión abierta en el apartado Sesiones; al cambiar de apartado se vuelve al listado.
-  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(() => devParams?.get("id") ?? null);
   const setSection = (s: SectionId) => {
     setSectionState(s);
     setSessionId(null);

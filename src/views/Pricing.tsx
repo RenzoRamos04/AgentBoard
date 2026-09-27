@@ -39,6 +39,25 @@ export function mergeOverrides(current: PriceOverride[], draft: Draft): PriceOve
   return [...out.values()];
 }
 
+/**
+ * Lee un JSON de precios: una lista `[{ model, input, output, cacheRead?, cacheWrite?, cacheWrite1h? }]`
+ * o un objeto `{ "modelo": { input, output, … } }`. Devuelve borradores (texto) por modelo.
+ */
+export function parsePriceFile(text: string): Draft {
+  const data = JSON.parse(text);
+  const entries: [string, Record<string, unknown>][] = Array.isArray(data)
+    ? data.map((x) => [String(x?.model ?? ""), x ?? {}])
+    : Object.entries(data ?? {}).map(([m, x]) => [m, (x ?? {}) as Record<string, unknown>]);
+  const out: Draft = {};
+  for (const [model, x] of entries) {
+    const m = model.trim().toLowerCase();
+    if (!m) throw new Error("falta el nombre de un modelo");
+    out[m] = FIELDS.map((f) => (x[f] == null ? "" : String(x[f])));
+    if (out[m].some((v) => parsePrice(v) == null)) throw new Error(`precio inválido en ${m}`);
+  }
+  return out;
+}
+
 const show = (n: number | undefined) => (n == null ? "" : n === 0 ? "" : String(n));
 
 function Progress({ label, spent, limit, hint }: { label: string; spent: number; limit: number; hint: string }) {
@@ -79,6 +98,7 @@ export function Pricing({
   const [newModel, setNewModel] = useState("");
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [confirmReset, setConfirmReset] = useState(false);
   // Gasto del mes (todos los agentes y proyectos) para las barras de presupuesto.
   const [month, setMonth] = useState<{ total: number; today: number; projects: BreakdownRow[]; agents: BreakdownRow[] } | null>(null);
 
@@ -148,6 +168,27 @@ export function Pricing({
     setNewModel("");
   };
 
+  /** Lleva el foco al primer precio que falta. */
+  const completeMissing = () => {
+    const first = missing[0];
+    if (first) document.getElementById(`price-${first.model}-0`)?.focus();
+  };
+  const restoreAll = async () => {
+    await save({ ...settings, priceOverrides: [] }, t("Precios por defecto restaurados."));
+    setDraft({});
+    setConfirmReset(false);
+  };
+  const importJson = async (file: File | undefined) => {
+    if (!file) return;
+    try {
+      const parsed = parsePriceFile(await file.text());
+      setDraft({ ...draft, ...parsed });
+      setNotice(t("{n} precios importados: revísalos y guarda.", { n: Object.keys(parsed).length }));
+    } catch (e) {
+      setError(t("No se pudo importar el archivo: {e}", { e: String(e) }));
+    }
+  };
+
   const columns: Column<PriceRow>[] = [
     { header: t("Modelo"), cell: (r) => <span title={r.model}>{r.model}</span>, className: "mono", width: "minmax(150px, 1fr)" },
     ...FIELDS.map(
@@ -155,6 +196,7 @@ export function Pricing({
         header: t(FIELD_LABELS[i]),
         cell: (r) => (
           <input
+            id={`price-${r.model}-${i}`}
             className={`price-input ${parsePrice(valueOf(r, i)) == null ? "invalid" : ""} ${r.source === "missing" && i < 2 && !draft[r.model] ? "needs" : ""}`}
             inputMode="decimal"
             placeholder="–"
@@ -205,12 +247,17 @@ export function Pricing({
         </h1>
       </header>
       {missing.length > 0 && (
-        <div className="notice warn">
+        <div className="notice warn notice-row">
+          <span>
           {t(missing.length === 1 ? "1 modelo sin precio ({m}) · {c} llamadas se cuentan a $0. Escribe su precio abajo y guarda." : "{n} modelos sin precio ({m}) · {c} llamadas se cuentan a $0. Escribe su precio abajo y guarda.", {
             n: missing.length,
             m: missing.map((r) => r.model).join(", "),
             c: fmt.int(missingCalls),
           })}
+          </span>
+          <button className="button primary" onClick={completeMissing}>
+            {t("Completar precios")}
+          </button>
         </div>
       )}
       {notice && <div className="notice good-notice">{notice}</div>}
@@ -229,6 +276,10 @@ export function Pricing({
             <button className="button" onClick={addModel} disabled={!newModel.trim()}>
               {t("+ Añadir modelo")}
             </button>
+            <label className="button file-button">
+              {t("Importar JSON")}
+              <input type="file" accept="application/json,.json" onChange={(e) => (importJson(e.target.files?.[0]), (e.target.value = ""))} />
+            </label>
             <div className="topbar-spacer" />
             <button className="button primary" onClick={savePrices} disabled={!dirty || invalid || saving}>
               {t("Guardar precios")}
@@ -236,11 +287,31 @@ export function Pricing({
           </div>
           {invalid && <p className="error small">{t("Los precios deben ser números mayores o iguales que 0.")}</p>}
           <DataTable rows={visible} rowKey={(r) => r.model} columns={columns} collapse={false} rowClassName={(r) => (r.source === "missing" ? "row-missing" : "")} />
-          {hidden > 0 && (
-            <button className="link table-more" onClick={() => setShowAll(true)}>
-              {t("Ver también los {n} modelos con precio por defecto que no has usado", { n: hidden })}
-            </button>
-          )}
+          <footer className="pricing-foot">
+            {hidden > 0 ? (
+              <button className="link" onClick={() => setShowAll(true)}>
+                {t("Ver también los {n} modelos con precio por defecto que no has usado", { n: hidden })}
+              </button>
+            ) : (
+              <span />
+            )}
+            {settings.priceOverrides.length > 0 &&
+              (confirmReset ? (
+                <span className="confirm">
+                  {t("¿Quitar tus {n} precios?", { n: settings.priceOverrides.length })}
+                  <button className="link danger" onClick={restoreAll} disabled={saving}>
+                    {t("Sí, restaurar")}
+                  </button>
+                  <button className="link" onClick={() => setConfirmReset(false)}>
+                    {t("Cancelar")}
+                  </button>
+                </span>
+              ) : (
+                <button className="link" onClick={() => setConfirmReset(true)}>
+                  {t("Restaurar valores por defecto")}
+                </button>
+              ))}
+          </footer>
         </section>
 
         <Budgets settings={settings} month={month} factor={factor} spentOf={spentOf} agents={agents} saving={saving} save={save} />
@@ -364,7 +435,22 @@ function Budgets({
           </button>
         </div>
       </div>
-      <p className="muted small">{t("Se avisa al llegar al 80 % y al 100 %. Los mensuales comparan la proyección del mes; el diario, el gasto de hoy.")}</p>
+      <fieldset className="alert-prefs">
+        <legend>{t("Avisos")}</legend>
+        {(
+          [
+            ["alertAt80", "Notificar al llegar al 80 %"],
+            ["alertAt100", "Notificar al superar el 100 %"],
+            ["trayShowsToday", "Mostrar el gasto de hoy en la bandeja"],
+          ] as const
+        ).map(([k, label]) => (
+          <label key={k} className="check">
+            <input type="checkbox" checked={settings[k]} disabled={saving} onChange={(e) => save({ ...settings, [k]: e.target.checked }, t("Avisos guardados."))} />
+            {t(label)}
+          </label>
+        ))}
+      </fieldset>
+      <p className="muted small">{t("Los mensuales comparan la proyección del mes; el diario, el gasto de hoy.")}</p>
     </section>
   );
 }
