@@ -77,7 +77,7 @@ export function Sidebar(p: Props) {
                 aria-current={p.section === s.id ? "page" : undefined}
               >
                 <SectionIcon id={s.id} />
-                <span className="nav-label">{t(s.title)}</span>
+                <span className="nav-label">{t(s.nav ?? s.title)}</span>
                 {s.isNew && <span className="nav-new">{t("nuevo")}</span>}
               </button>
             ))}

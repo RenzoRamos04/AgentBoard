@@ -190,7 +190,7 @@ export function describe(i: Insight): Described {
 const MARK = { critical: "!", warn: "!", info: "i", good: "✓" } as const;
 const SEVERITY = { critical: "Importante", warn: "Aviso", info: "Información", good: "Va bien" } as const;
 /** Avisos visibles antes de «Ver todos». */
-const FIRST = 5;
+const FIRST = 4;
 
 /** Tarjeta «Lo que deberías saber» de la portada. */
 export function Insights({

@@ -38,7 +38,7 @@ export function summaryKpis(data: DashboardData, budget: number | null): Kpi[] {
 }
 
 /** Coste por día apilado por agente, con los días sin actividad a cero. */
-export function DailyByAgent({ data, height = 210 }: { data: DashboardData; height?: number }) {
+export function DailyByAgent({ data, height = 250 }: { data: DashboardData; height?: number }) {
   const order = data.agents.map((a) => a.key);
   const color = (key: string) => agentColor(key, Math.max(order.indexOf(key), 0));
   const byDay = new Map<number, { key: string; label: string; value: number; color: string }[]>();
@@ -177,7 +177,7 @@ export function Overview({
       )}
       <Kpis items={summaryKpis(data, budget)} />
       {over && <div className="notice warn">{t("⚠ La proyección del mes supera el presupuesto de {b}.", { b: fmt.usd(budget!) })}</div>}
-      <div className="grid-top">
+      <div className="grid-top fixed-row">
         <Panel id="daily" title={t("Gasto diario")} question={data.prev ? t("por agente · línea discontinua = periodo anterior") : t("por agente")} onOpen={() => open("daily")} openLabel={t("Daily Activity ›")}>
           <DailyByAgent data={data} />
         </Panel>

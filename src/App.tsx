@@ -63,7 +63,7 @@ export default function App() {
   const [settings, setSettings] = useState<Settings>({ theme: storedTheme(), language: storedLang(), monthlyBudget: null, dailyBudget: null, budgets: [], priceOverrides: [], alertAt80: true, alertAt100: true, trayShowsToday: false });
   const lang = resolveLang(settings.language);
   setLang(lang);
-  const [showSettings, setShowSettings] = useState(false);
+  const [showSettings, setShowSettings] = useState(() => devParams?.get("settings") === "1");
   const [showPalette, setShowPalette] = useState(false);
   // Sesiones leídas en total (pie del panel lateral).
   const [totalSessions, setTotalSessions] = useState<number | null>(null);

@@ -116,7 +116,7 @@ export function installMocks() {
         return out;
       }
       if (cmd === "get_breakdown" && (a.by === "project" || a.by === "branch"))
-        return [row("AgentBoard", 17.0, 700, 0, 10), row("tuio-web", 19.9, 1200, 0, 9), row("infra", 9.0, 650, 0, 4), row("main", 10, 400, 0, 4)];
+        return [{ ...row("AgentBoard", 17.0, 700, 0, 10), key: "/w" }, { ...row("tuio-web", 19.9, 1200, 0, 9), key: "/t" }, { ...row("infra", 9.0, 650, 0, 4), key: "/i" }, row("main", 10, 400, 0, 4)];
     }
     switch (cmd) {
       case "get_summary":
@@ -165,7 +165,8 @@ export function installMocks() {
         switch (a.by) {
           case "agent": return [row("Claude Code", 51.9, 3460, 0, 58).key === "Claude Code" ? { ...row("Claude Code", 51.9, 3460, 0, 58), key: "claude-code" } : row("x", 0, 0), { ...row("Codex CLI", 4.1, 332, 0, 6), key: "codex" }, { ...row("OpenCode", 0, 84, 0, 3), key: "opencode" }];
           case "model": return models;
-          case "project": return [row("AgentBoard", 22.1, 900, 0, 12), row("tuio-web", 18.4, 1300, 0, 9), row("infra", 9.2, 700, 0, 4), row("scripts", 6.3, 890, 0, 3)];
+          // Clave = raíz del repo, como en el núcleo (y en la serie diaria por proyecto).
+          case "project": return [{ ...row("AgentBoard", 22.1, 900, 0, 12), key: "/w" }, { ...row("tuio-web", 18.4, 1300, 0, 9), key: "/t" }, { ...row("infra", 9.2, 700, 0, 4), key: "/i" }, { ...row("scripts", 6.3, 890, 0, 3), key: "/s" }];
           case "branch": return [row("main", 12.0, 500, 0, 5), row("feat/dashboard", 8.1, 300, 0, 3), row("fix/ingesta", 2.0, 100, 0, 1)];
           case "skill": return [row("general-purpose", 1.32, 5), row("code-reviewer", 0.541, 3), row("dataviz", 0.211, 1)];
           case "mcp": return [row("figma", 0, 23), row("claude_ai_Slack", 0, 5), row("claude_ai_Supabase", 0, 1)];

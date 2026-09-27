@@ -380,7 +380,7 @@ function Budgets({
         </label>
       </div>
       <button
-        className="button primary"
+        className="button primary budget-save"
         disabled={!dirtyTop || !validTop || !validDay || saving}
         onClick={() => save({ ...settings, monthlyBudget: num(monthly), dailyBudget: num(daily) }, t("Presupuestos guardados."))}
       >

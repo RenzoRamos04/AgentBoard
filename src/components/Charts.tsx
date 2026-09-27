@@ -216,10 +216,12 @@ export function LineChart({
         {markers?.map((m, i) => (
           <g key={i} className="marker">
             <line x1={x(m.index)} x2={x(m.index)} y1={pad.top} y2={pad.top + ih} />
-            {/* Cerca del borde derecho, la etiqueta va a la izquierda de la línea. */}
+            {/* Si dos marcas caen muy juntas, solo la primera lleva texto; cerca del borde derecho, va a la izquierda. */}
+            {(i === 0 || x(m.index) - x(markers[i - 1].index) >= (x(m.index) > pad.left + iw * 0.85 ? 170 : 85)) && (
             <text x={x(m.index) > pad.left + iw * 0.85 ? x(m.index) - 4 : x(m.index) + 4} y={pad.top + 10} textAnchor={x(m.index) > pad.left + iw * 0.85 ? "end" : "start"}>
               {m.label}
             </text>
+            )}
           </g>
         ))}
         {hover != null && (

@@ -24,6 +24,8 @@ export interface Section {
   group: SectionGroup;
   /** Apartado añadido en la V2 (etiqueta «nuevo» en el panel lateral). */
   isNew?: boolean;
+  /** Nombre corto para el panel lateral, si el título no cabe. */
+  nav?: string;
 }
 
 /** Grupos del panel lateral, en orden. */
@@ -48,7 +50,7 @@ export const SECTIONS: Section[] = [
   { id: "skills", title: "Skills & Agents", question: "¿Qué skills y subagentes invoco?", group: "herramientas" },
   { id: "mcp", title: "MCP Servers", question: "¿Qué servidores MCP uso?", group: "herramientas" },
   { id: "agents", title: "Agent Types", question: "¿Cuánto cuestan los subagentes de cada agente?", group: "herramientas" },
-  { id: "pricing", title: "Precios y presupuestos", question: "¿Están bien los precios? ¿Voy dentro del presupuesto?", group: "configuracion", isNew: true },
+  { id: "pricing", title: "Precios y presupuestos", nav: "Precios",  question: "¿Están bien los precios? ¿Voy dentro del presupuesto?", group: "configuracion", isNew: true },
 ];
 
 export const sectionOf = (id: SectionId) => SECTIONS.find((s) => s.id === id)!;
