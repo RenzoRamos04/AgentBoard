@@ -30,6 +30,10 @@ pub const DEFAULT_PRICES: &[(&str, f64, f64, f64, f64, f64)] = &[
     ("claude-sonnet-4", 3.0, 15.0, 0.3, 3.75, 6.0),
     ("claude-haiku-4-5", 1.0, 5.0, 0.1, 1.25, 2.0),
     ("claude-3-5-haiku", 0.8, 4.0, 0.08, 1.0, 1.6),
+    // Familia GPT-6 (precio estándar, contexto corto; septiembre de 2026).
+    ("gpt-6-astra", 10.0, 50.0, 1.0, 0.0, 0.0),
+    ("gpt-6-sol", 2.0, 10.0, 0.2, 0.0, 0.0),
+    ("gpt-6-luna", 0.10, 0.50, 0.01, 0.0, 0.0),
     ("gpt-5", 1.25, 10.0, 0.125, 0.0, 0.0),
     ("gpt-5-codex", 1.25, 10.0, 0.125, 0.0, 0.0),
     ("gpt-5.1", 1.25, 10.0, 0.125, 0.0, 0.0),
@@ -407,5 +411,15 @@ mod tests {
             rows.len() > 4,
             "incluye también los modelos con precio no usados"
         );
+    }
+
+    #[test]
+    fn precios_de_gpt_6() {
+        let conn = db::open_in_memory().unwrap();
+        // 1M de entrada + 100K de salida en Astra: 10 + 5 = 15 USD.
+        insert_call(&conn, "a", "gpt-6-astra", 1_000_000, 100_000);
+        insert_call(&conn, "l", "gpt-6-luna", 1_000_000, 100_000);
+        assert!((cost(&conn, "a") - 15.0).abs() < 1e-9);
+        assert!((cost(&conn, "l") - 0.15).abs() < 1e-9);
     }
 }
