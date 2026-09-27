@@ -7,7 +7,7 @@ import { Kpis, type Kpi } from "../components/Kpis";
 import { ppDelta, relDelta } from "../lib/delta";
 import { Panel } from "../components/Panel";
 import { Columns, Legend, ShareBar } from "../components/Charts";
-import { dayPoints, ModelPanel, ProjectPanel, startOfDay } from "./panels";
+import { dayPoints, ModelPanel, startOfDay } from "./panels";
 import { Insights } from "./Insights";
 
 
@@ -20,19 +20,20 @@ export function summaryKpis(data: DashboardData, budget: number | null): Kpi[] {
   const p = data.prev?.summary;
   const monthSpent = data.month.reduce((a, p) => a + p.costUsd, 0);
   const projection = projectMonth(monthSpent);
-  const budgetHint = budget != null ? t(" · presupuesto {b} ({p})", { b: fmt.usd(budget), p: fmt.pct(budget ? monthSpent / budget : 0) }) : "";
   return [
     { label: t("Coste"), value: fmt.usd(s.costUsd), hint: t("{n} llamadas", { n: fmt.int(s.calls) }), tone: "accent", delta: p && relDelta(s.costUsd, p.costUsd, false) },
     { label: t("Sesiones"), value: fmt.int(s.sessions), hint: s.sessions ? t("{v} por sesión", { v: fmt.usd(s.costUsd / s.sessions) }) : "", delta: p && relDelta(s.sessions, p.sessions, null) },
     { label: t("Cache hit"), value: fmt.pct(s.cacheHit), hint: t("{r} leídos · {w} escritos", { r: fmt.compact(s.cacheRead), w: fmt.compact(s.cacheWrite) }), delta: p && p.calls > 0 && s.calls > 0 ? ppDelta(s.cacheHit, p.cacheHit, true) : null },
     { label: t("Ahorro por caché"), value: fmt.usd(s.cacheSavingsUsd), hint: t("estimado: esa entrada a precio normal"), tone: "good", delta: p && relDelta(s.cacheSavingsUsd, p.cacheSavingsUsd, true) },
     { label: t("Burn rate"), value: `${fmt.usd(s.burnRateUsdH)}/h`, hint: t("últimos 60 minutos") },
-    {
-      label: t("Gasto del mes"),
-      value: fmt.usd(monthSpent),
-      hint: t("proyección {v}", { v: fmt.usd(projection) }) + budgetHint,
-      tone: budget != null && projection > budget ? "warn" : undefined,
-    },
+    budget
+      ? {
+          label: t("Mes · {p} de {b}", { p: fmt.pct(monthSpent / budget), b: fmt.usd(budget) }),
+          value: fmt.usd(monthSpent),
+          hint: t(projection > budget ? "proyección {v} · supera el presupuesto" : "proyección {v} · dentro del presupuesto", { v: fmt.usd(projection) }),
+          tone: projection > budget ? "warn" : undefined,
+        }
+      : { label: t("Gasto del mes"), value: fmt.usd(monthSpent), hint: t("proyección {v}", { v: fmt.usd(projection) }) },
   ];
 }
 
@@ -83,8 +84,37 @@ export function DailyByAgent({ data, height = 210 }: { data: DashboardData; heig
   return (
     <div className="chart-box">
       <Legend items={legend} />
-      <Columns points={points} format={fmt.usd} height={height} compare={prev} />
+      <Columns points={points} format={fmt.usd} height={height} compare={prev} yAxis />
     </div>
+  );
+}
+
+/** Top proyectos (o ramas) de la portada: nombre, coste y variación, con una barra debajo. */
+function ProjectList({ data }: { data: DashboardData }) {
+  const rows = (data.branches ?? data.projects).slice(0, 6);
+  if (!rows.length) return <p className="empty">{t("Sin datos en este periodo")}</p>;
+  const max = Math.max(...rows.map((r) => r.costUsd), 1e-12);
+  const prev = data.prev ? new Map(data.prev.projects.map((r) => [r.key, r.costUsd])) : null;
+  return (
+    <ul className="rank-list">
+      {rows.map((r) => {
+        const d = prev ? relDelta(r.costUsd, prev.get(r.key) ?? 0, false) : null;
+        return (
+          <li key={r.key}>
+            <div className="rank-row">
+              <span className="rank-name" title={r.label}>
+                {r.label}
+              </span>
+              <span className="num cost">{fmt.usd(r.costUsd)}</span>
+              {prev && <span className={`num rank-delta ${d?.tone ?? "neutral"}`}>{d ? t(d.text) : "–"}</span>}
+            </div>
+            <div className="rank-bar">
+              <div style={{ width: `${Math.max(1.5, (r.costUsd / max) * 100)}%` }} />
+            </div>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 
@@ -127,27 +157,21 @@ export function Overview({
   return (
     <div className="main">
       <header className="page-head">
-        <h1>
-          {t("Resumen")} <span className="muted">· {periodLabel(period)} · {scope}</span>
-        </h1>
+        <div className="page-title-row">
+          <h1>
+            {t("Resumen")} <span className="muted">· {periodLabel(period)} · {scope}</span>
+          </h1>
+          {data.prev?.filter.from != null && data.prev.filter.to != null && (
+            <span className="compare-pill">
+              {t("Comparando con {a} – {b}", { a: fmt.day(data.prev.filter.from), b: fmt.day(data.prev.filter.to - 1) })}
+            </span>
+          )}
+        </div>
       </header>
       {data.summary.calls === 0 && (
         <div className="notice">{t('No hay llamadas en este periodo. Si acabas de instalar la app, espera a que termine el escaneo inicial o elige "Todo".')}</div>
       )}
       <Kpis items={summaryKpis(data, budget)} />
-      {data.summary.unpricedModels.length > 0 && (
-        <div className="notice warn notice-row">
-          <span>
-            {t(data.summary.unpricedModels.length === 1 ? "1 modelo sin precio ({m}): sus llamadas cuentan como $0." : "{n} modelos sin precio ({m}): sus llamadas cuentan como $0.", {
-              n: data.summary.unpricedModels.length,
-              m: data.summary.unpricedModels.slice(0, 3).join(", ") + (data.summary.unpricedModels.length > 3 ? "…" : ""),
-            })}
-          </span>
-          <button className="link" onClick={() => open("pricing")}>
-            {t("Completar precios ›")}
-          </button>
-        </div>
-      )}
       {over && <div className="notice warn">{t("⚠ La proyección del mes supera el presupuesto de {b}.", { b: fmt.usd(budget!) })}</div>}
       <div className="grid-top">
         <Panel id="daily" title={t("Gasto diario")} question={data.prev ? t("por agente · línea discontinua = periodo anterior") : t("por agente")} onOpen={() => open("daily")} openLabel={t("Daily Activity ›")}>
@@ -159,10 +183,20 @@ export function Overview({
       </div>
       <div className="grid-3">
         <Panel id="project" title={singleProject ? t("Top ramas") : t("Top proyectos")} onOpen={() => open("project")} openLabel={t("By Project ›")}>
-          <ProjectPanel {...props} />
+          <ProjectList data={data} />
         </Panel>
         <Panel id="model" title={t("Top modelos")} onOpen={() => open("model")} openLabel={t("By Model ›")}>
           <ModelPanel {...props} />
+          {data.summary.unpricedModels.length > 0 && (
+            <button className="card-alert" onClick={() => open("pricing")}>
+              <span>
+                {t(data.summary.unpricedModels.length === 1 ? "1 modelo sin precio: sus llamadas cuentan como $0" : "{n} modelos sin precio: sus llamadas cuentan como $0", {
+                  n: data.summary.unpricedModels.length,
+                })}
+              </span>
+              <span>{t("Añadir ›")}</span>
+            </button>
+          )}
         </Panel>
         <Panel id="activity" title={t("En qué se va el gasto")} onOpen={() => open("activity")} openLabel={t("By Activity ›")}>
           <ActivityShare data={data} />

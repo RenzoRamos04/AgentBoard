@@ -68,6 +68,14 @@ function useWidth<T extends HTMLElement>() {
   return [ref, w] as const;
 }
 
+/** Paso «redondo» (1, 2, 2.5, 5 × 10ⁿ) mayor o igual que `raw`, para las marcas de un eje. */
+export function niceStep(raw: number): number {
+  if (!(raw > 0)) return 1;
+  const exp = Math.pow(10, Math.floor(Math.log10(raw)));
+  const f = raw / exp;
+  return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * exp;
+}
+
 /** Gráfico de columnas por día (o apilado por serie), con eje de fechas y tooltip. */
 export function Columns({
   points,
@@ -76,6 +84,7 @@ export function Columns({
   format,
   axis = (ts: number) => new Date(ts).toLocaleDateString(LOCALES[getLang()], { day: "numeric", month: "short" }),
   compare,
+  yAxis = false,
 }: {
   points: ColumnPoint[];
   height?: number;
@@ -84,13 +93,19 @@ export function Columns({
   axis?: (ts: number) => string;
   /** Valores de otro periodo alineados con `points`, pintados como línea discontinua. */
   compare?: number[];
+  /** Eje de importes a la izquierda con líneas guía. */
+  yAxis?: boolean;
 }) {
   const setTip = useTooltip();
   const [ref] = useWidth<HTMLDivElement>();
   if (!points.length) return <Empty />;
-  const max = Math.max(...points.map((p) => p.value), ...(compare ?? []), 1e-12);
+  const rawMax = Math.max(...points.map((p) => p.value), ...(compare ?? []), 1e-12);
+  // Con eje, la escala llega a un múltiplo «redondo» para que las marcas sean legibles.
+  const step = yAxis ? niceStep(rawMax / 3) : 0;
+  const max = yAxis ? Math.max(step * Math.ceil(rawMax / step), 1e-12) : rawMax;
   const px = (v: number) => Math.round((v / max) * height);
   const n = points.length;
+  const peak = points.reduce((a, b) => (b.value > a.value ? b : a), points[0]);
   const line = compare?.length
     ? compare
         .slice(0, n)
@@ -101,8 +116,19 @@ export function Columns({
   const template = { gridTemplateColumns: `repeat(${n}, minmax(0, 1fr))` };
   return (
     <div className="columns" ref={ref}>
-      <div className="columns-max muted">{t("máx. {v}", { v: format(max) })}</div>
+      <div className="columns-max muted">{t("máx. {v} · {d}", { v: format(peak.value), d: axis(peak.ts) })}</div>
+      <div className={yAxis ? "columns-y" : ""}>
+      {yAxis && (
+        <div className="columns-y-axis muted num" style={{ height }} aria-hidden>
+          {Array.from({ length: Math.round(max / step) + 1 }, (_, i) => i * step).map((v) => (
+            <span key={v} style={{ top: `${(1 - v / max) * 100}%` }}>
+              {format(v)}
+            </span>
+          ))}
+        </div>
+      )}
       <div className="columns-plot" style={{ height, ...template }}>
+        {yAxis && Array.from({ length: Math.round(max / step) }, (_, i) => (i + 1) * step).map((v) => <div key={v} className="columns-grid" style={{ bottom: `${(v / max) * 100}%` }} />)}
         {points.map((p) => (
           <div
             key={p.ts}
@@ -128,7 +154,8 @@ export function Columns({
           </svg>
         )}
       </div>
-      <div className="columns-axis muted" style={template}>
+      </div>
+      <div className={`columns-axis muted ${yAxis ? "with-y" : ""}`} style={template}>
         {points.map((p, i) => (
           <span key={p.ts} className={i === 0 ? "first" : i === n - 1 ? "last" : ""}>
             {i === 0 || i === n - 1 || (n > 6 && i === mid) ? axis(p.ts) : ""}

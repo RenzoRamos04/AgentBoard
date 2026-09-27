@@ -15,6 +15,22 @@ export function markerIndex(timeline: { ts: number }[], ts: number): number {
 
 const TOP_TOOLS = 3;
 
+/**
+ * Coste medio por turno antes y después de la k-ésima compactación (k = 3, o la última si hay
+ * menos). `null` si no hay compactaciones o faltan turnos a un lado.
+ */
+export function afterCompaction(turns: { ts: number; costUsd: number }[], compactions: number[]) {
+  if (!compactions.length) return null;
+  const k = Math.min(3, compactions.length);
+  const cut = compactions[k - 1];
+  const before = turns.filter((x) => x.ts < cut);
+  const after = turns.filter((x) => x.ts >= cut);
+  if (!before.length || !after.length) return null;
+  const avg = (xs: { costUsd: number }[]) => xs.reduce((a, x) => a + x.costUsd, 0) / xs.length;
+  const b = avg(before);
+  return { k, ratio: b > 0 ? avg(after) / b : null };
+}
+
 export function SessionDetail({ id, refresh, back }: { id: string; refresh: number; back: () => void }) {
   const [d, setD] = useState<Detail | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -34,6 +50,7 @@ export function SessionDetail({ id, refresh, back }: { id: string; refresh: numb
   if (!d) return <div className="main muted">{t("Cargando…")}</div>;
 
   const s = d.session;
+  const after = afterCompaction(d.turns, d.compactions);
   const toolCalls = d.tools.reduce((a, x) => a + x.calls, 0);
   const toolErrors = d.tools.reduce((a, x) => a + x.errors, 0);
   const kpis: Kpi[] = [
@@ -149,6 +166,11 @@ export function SessionDetail({ id, refresh, back }: { id: string; refresh: numb
             thick
           />
           <DataTable rows={d.models} rowKey={(r) => r.key} columns={modelColumns} collapse={false} />
+          {after && after.ratio != null && after.ratio >= 1.2 && (
+            <p className="card-alert static">
+              {t("Tras la {k}.ª compactación, cada turno cuesta {x}× más. Buen punto para abrir una sesión nueva.", { k: after.k, x: after.ratio.toFixed(1) })}
+            </p>
+          )}
         </section>
       </div>
       <div className="grid-detail">

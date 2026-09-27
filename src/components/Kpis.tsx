@@ -10,10 +10,11 @@ export interface Kpi {
   delta?: Delta | null;
 }
 
-export const Kpis = ({ items, columns }: { items: Kpi[]; columns?: number }) => (
-  <div className="kpis" style={columns ? { gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` } : undefined}>
+/** `compact`: etiqueta y valor en una sola línea (cifras de apoyo, como en Sesiones). */
+export const Kpis = ({ items, columns, compact = false }: { items: Kpi[]; columns?: number; compact?: boolean }) => (
+  <div className={`kpis ${compact ? "kpis-compact" : ""}`} style={columns ? { gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` } : undefined}>
     {items.map((k) => (
-      <div className="kpi" key={k.label}>
+      <div className="kpi" key={k.label} title={compact ? k.hint : undefined}>
         <span className="kpi-head">
           <span className="kpi-label">{k.label}</span>
           {k.delta && (
@@ -23,7 +24,7 @@ export const Kpis = ({ items, columns }: { items: Kpi[]; columns?: number }) => 
           )}
         </span>
         <strong className={`kpi-value ${k.tone ?? ""}`}>{k.value}</strong>
-        {k.hint && <span className="kpi-hint">{k.hint}</span>}
+        {k.hint && !compact && <span className="kpi-hint">{k.hint}</span>}
       </div>
     ))}
   </div>

@@ -141,7 +141,7 @@ export function Sessions({ filter, period, refresh, open }: { filter: Filter; pe
           </span>
         </h1>
       </header>
-      <Kpis items={kpis} columns={4} />
+      <Kpis items={kpis} columns={4} compact />
       <div className="toolbar">
         <label className="search toolbar-search">
           <SearchIcon />
