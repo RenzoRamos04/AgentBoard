@@ -42,6 +42,34 @@ impl Gemini {
         }
     }
 
+    /// Carpeta del proyecto de un archivo de sesión. Las versiones recientes de Gemini CLI no la
+    /// escriben en el log: está en `tmp/<proyecto>/.project_root` o, si falta, en
+    /// `~/.gemini/projects.json` (`{"projects": {"<ruta>": "<proyecto>"}}`).
+    pub fn project_root_of(path: &Path) -> Option<String> {
+        for dir in path.ancestors().skip(1) {
+            if let Ok(root) = std::fs::read_to_string(dir.join(".project_root")) {
+                let root = root.trim();
+                if !root.is_empty() {
+                    return Some(root.to_string());
+                }
+            }
+            let (Some(name), Some(parent)) = (dir.file_name(), dir.parent()) else {
+                break;
+            };
+            if parent.file_name().is_some_and(|n| n == "tmp") {
+                // `dir` es `tmp/<proyecto>`: se busca en projects.json, junto a `tmp/`.
+                let map: Value = std::fs::read_to_string(parent.parent()?.join("projects.json"))
+                    .ok()
+                    .and_then(|t| serde_json::from_str(&t).ok())?;
+                return map["projects"]
+                    .as_object()?
+                    .iter()
+                    .find_map(|(root, v)| (v.as_str() == name.to_str()).then(|| root.clone()));
+            }
+        }
+        None
+    }
+
     fn apply_meta(st: &mut FileState, meta: &Value) {
         if let Some(id) = meta["sessionId"].as_str() {
             st.session_id = id.to_string();
@@ -249,7 +277,12 @@ impl Provider for Gemini {
     fn parse_line(&self, path: &Path, line: &str) -> Result<Vec<Record>> {
         let v: Value = serde_json::from_str(line)?;
         let mut states = self.state.lock().unwrap_or_else(|e| e.into_inner());
-        let st = states.entry(path.to_path_buf()).or_default();
+        let st = states
+            .entry(path.to_path_buf())
+            .or_insert_with(|| FileState {
+                cwd: Self::project_root_of(path),
+                ..Default::default()
+            });
         let mut out = Vec::new();
 
         if let Some(set) = v.get("$set") {
@@ -294,6 +327,56 @@ impl Provider for Gemini {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn proyecto_desde_project_root_o_projects_json() {
+        let dir = tempfile::tempdir().unwrap();
+        let gem = dir.path().join(".gemini");
+        let chats = gem.join("tmp").join("agentboard").join("chats");
+        std::fs::create_dir_all(chats.join("padre")).unwrap();
+        let file = chats.join("session-1.jsonl");
+        let sub = chats.join("padre").join("sub.jsonl");
+        // Sin pistas: sin proyecto.
+        assert_eq!(Gemini::project_root_of(&file), None);
+        // projects.json relaciona la ruta con la carpeta `agentboard`.
+        std::fs::write(
+            gem.join("projects.json"),
+            r#"{"projects":{"/home/u/Proyectos/AgentBoard":"agentboard"}}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            Gemini::project_root_of(&file).as_deref(),
+            Some("/home/u/Proyectos/AgentBoard")
+        );
+        // .project_root manda, también para los subagentes.
+        std::fs::write(
+            gem.join("tmp").join("agentboard").join(".project_root"),
+            "/var/home/u/Proyectos/AgentBoard\n",
+        )
+        .unwrap();
+        assert_eq!(
+            Gemini::project_root_of(&file).as_deref(),
+            Some("/var/home/u/Proyectos/AgentBoard")
+        );
+        assert_eq!(
+            Gemini::project_root_of(&sub).as_deref(),
+            Some("/var/home/u/Proyectos/AgentBoard")
+        );
+
+        // Y la sesión sale con ese proyecto aunque el log no traiga `directories`.
+        let p = Gemini::with_roots(vec![gem.join("tmp")]);
+        let recs = p
+            .parse_line(&file, r#"{"sessionId":"s1","projectHash":"x","startTime":"2026-09-27T17:04:51.916Z","kind":"main"}"#)
+            .unwrap();
+        assert!(recs.is_empty());
+        let recs = p
+            .parse_line(&file, r#"{"id":"u1","timestamp":"2026-09-27T17:05:00.000Z","type":"user","content":[{"text":"hola"}]}"#)
+            .unwrap();
+        let Some(Record::Session(s)) = recs.first() else {
+            panic!("falta la sesión")
+        };
+        assert_eq!(s.cwd.as_deref(), Some("/var/home/u/Proyectos/AgentBoard"));
+    }
 
     #[test]
     fn detecta_sesiones() {
