@@ -13,7 +13,7 @@ y su gráfico, y una vista ampliada al pulsarlo. Todo respeta los filtros activo
 | **Daily Activity** | Cuánto se gasta cada día. |
 | **By Agent** | Qué agente se usa más y cuánto cuesta cada uno. |
 | **By Project** | Coste por proyecto (y por rama al elegir un proyecto), con el *overhead* de contexto. |
-| **Sesiones** | Listado de sesiones (mediana y p95 de coste, búsqueda, vistas rápidas, tabla ordenable) y detalle de cada una: coste acumulado con las compactaciones, coste por actividad, turnos y latencia p50/p95 por herramienta. |
+| **Proyectos** | Una fila por proyecto (agrupando worktrees): agentes, ramas, modelo principal, sesiones, tiempo activo, turnos, compactaciones y coste, con búsqueda y vistas rápidas. Su detalle muestra el coste acumulado por día, actividades, modelos, ramas, latencia de herramientas y sus sesiones; cada sesión abre su propio detalle (coste acumulado con las compactaciones, turnos y latencia). |
 | **Heatmap** | Coste por día de la semana y hora local (7 × 24), con la franja de más gasto, el día más activo y el reparto entre horario laboral y fin de semana. |
 | **By Activity** | Reparto por tipo de actividad: coding, testing, debugging, exploración, conversación, etc. |
 | **By Model** | Coste, cache hit y llamadas por modelo. |

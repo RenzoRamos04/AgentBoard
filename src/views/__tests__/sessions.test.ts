@@ -6,7 +6,7 @@ import { markerIndex } from "../SessionDetail";
 const row = (costUsd: number, extra: Partial<SessionRow> = {}): SessionRow => ({
   id: String(costUsd), agentId: "claude-code", agentName: "Claude Code", projectId: 1, project: "web", branch: "main",
   startedAt: 0, endedAt: 60_000, model: "claude-opus-4-5", costUsd, calls: 1, cacheHit: 0.9, inputTokens: 0, outputTokens: 0,
-  hasPrice: true, turns: 1, compactions: 0, toolCalls: 0, toolErrors: 0, subagentCalls: 0, isSubagent: false, ...extra,
+  hasPrice: true, turns: 1, compactions: 0, toolCalls: 0, toolErrors: 0, subagentCalls: 0, isSubagent: false, projectKey: "/w", ...extra,
 });
 
 describe("sessionStats", () => {

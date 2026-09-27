@@ -15,7 +15,7 @@ Reúne en una sola vista qué hacen Claude Code, Codex, Copilot, Cursor, Gemini 
 ![TypeScript](https://img.shields.io/badge/TypeScript-7-3178C6?logo=typescript&logoColor=white)
 ![Vite](https://img.shields.io/badge/Vite-8-646CFF?logo=vite&logoColor=white)
 ![SQLite](https://img.shields.io/badge/SQLite-en%20memoria-003B57?logo=sqlite&logoColor=white)
-![MCP](https://img.shields.io/badge/MCP-18%20herramientas-000000)
+![MCP](https://img.shields.io/badge/MCP-20%20herramientas-000000)
 ![CI](https://github.com/RenzoRamosDEV/AgentBoard/actions/workflows/ci.yml/badge.svg)
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 
@@ -77,7 +77,7 @@ cada apartado con su tabla y su gráfico.
 | | |
 |---|---|
 | 📊 | **Resumen** — KPIs con su variación frente al periodo anterior, gasto diario por agente, avisos «Lo que deberías saber» y top de proyectos, modelos y actividades |
-| 🧾 | **Sesiones** — cada sesión con su coste, turnos y compactaciones; su detalle con el coste acumulado, los turnos y la latencia de cada herramienta |
+| 🧾 | **Proyectos** — cada proyecto con sus agentes, ramas, sesiones, tiempo activo y coste; su detalle baja a cada sesión, con el coste acumulado, los turnos y la latencia de cada herramienta |
 | 🏷️ | **Precios y presupuestos** — precios por modelo editables (y aviso de los que faltan); presupuestos mensual, diario y por proyecto o agente |
 | 📅 | **Daily Activity** — cuánto se gasta cada día |
 | 🤖 | **By Agent** — qué agente se usa más y cuánto cuesta cada uno |
@@ -175,7 +175,7 @@ AppImage o si solo se quiere el MCP. Registro en Claude Code:
 claude mcp add agentboard -- /usr/bin/agentboard-mcp
 ```
 
-18 herramientas (`get_summary`, `get_cost_by_model`, `get_daily`, `get_sessions`, `get_insights`…), todas con
+20 herramientas (`get_summary`, `get_projects`, `get_sessions`, `get_insights`, `get_daily`…), todas con
 filtro opcional de `period`, `agents` y `projects`. Es un servidor MCP estándar: sirve para
 Claude Code, Codex, Gemini, Cursor, OpenCode… Guía completa en la
 [wiki del MCP](docs/wiki/Servidor-MCP.md).

@@ -2,11 +2,13 @@ import { describe as group, expect, it } from "vitest";
 import { describe } from "../Insights";
 
 group("describe", () => {
-  it("compactaciones en singular y plural, con enlace a Sesiones", () => {
+  it("compactaciones en singular y plural, con enlace a la sesión o a Proyectos", () => {
     const one = describe({ kind: "compactions", severity: "critical", params: { n: 1, project: "web", branch: "main", max: 4 }, message: "" });
     expect(one.title).toBe("1 sesión con 3+ compactaciones");
     expect(one.body).toContain("web · main");
-    expect(one.section).toBe("sessions");
+    expect(one.section).toBe("projects");
+    expect(one.sessionId).toBeUndefined();
+    expect(describe({ kind: "compactions", severity: "critical", params: { n: 1, project: "web", branch: "", max: 4, sessionId: "s1" }, message: "" }).sessionId).toBe("s1");
     expect(describe({ kind: "compactions", severity: "critical", params: { n: 2, project: "web", branch: "", max: 3 }, message: "" }).title).toBe("2 sesiones con 3+ compactaciones");
   });
   it("herramienta de shell enlaza a Shell Commands con su comando", () => {

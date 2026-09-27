@@ -36,9 +36,24 @@ const sessions = sessionRows.map(([id, agentId, agentName, project, branch, mode
   return {
     id, agentId, agentName, projectId: i + 1, project, branch, startedAt, endedAt: startedAt + hours * HOUR, model, costUsd, calls,
     cacheHit: 0.9 + (i % 4) * 0.02, inputTokens: calls * 90_000, outputTokens: calls * 900, hasPrice: model !== "modelo-local",
-    turns, compactions, toolCalls, toolErrors, subagentCalls: i % 3 === 0 ? 12 : 0, isSubagent: false,
+    turns, compactions, toolCalls, toolErrors, subagentCalls: i % 3 === 0 ? 12 : 0, isSubagent: false, projectKey: `/${project}`,
   };
 });
+
+function mockProjects() {
+  const by = new Map<string, typeof sessions>();
+  for (const x of sessions) by.set(x.project, [...(by.get(x.project) ?? []), x]);
+  return [...by.entries()].map(([name, ss], i) => ({
+    key: `/${name}`, projectId: i + 1, name, path: `/home/u/Proyectos/${name}`,
+    agents: [...new Map(ss.map((x) => [x.agentId, { id: x.agentId, name: x.agentName }])).values()],
+    branches: [...new Set(ss.map((x) => x.branch))], model: ss[0].model, sessions: ss.length,
+    activeMs: ss.reduce((a, x) => a + x.endedAt - x.startedAt, 0), turns: ss.reduce((a, x) => a + x.turns, 0),
+    compactions: ss.reduce((a, x) => a + x.compactions, 0), toolCalls: ss.reduce((a, x) => a + x.toolCalls, 0),
+    toolErrors: ss.reduce((a, x) => a + x.toolErrors, 0), subagentCalls: ss.reduce((a, x) => a + x.subagentCalls, 0),
+    costUsd: ss.reduce((a, x) => a + x.costUsd, 0), calls: ss.reduce((a, x) => a + x.calls, 0), cacheHit: 0.95,
+    hasPrice: ss.every((x) => x.hasPrice), firstTs: Math.min(...ss.map((x) => x.startedAt)), lastTs: Math.max(...ss.map((x) => x.endedAt)),
+  })).sort((a, b) => b.costUsd - a.costUsd);
+}
 
 function sessionDetail(id: string) {
   const s = sessions.find((x) => x.id === id) ?? sessions[0];
@@ -224,6 +239,23 @@ export function installMocks() {
           const source = o ? "edited" : prices ? "default" : model === "big-pickle" ? "reported" : "missing";
           return { model, prices: p, source, calls, costUsd: p ? calls * 0.01 : 0 };
         }).sort((a, b) => Number(b.source === "missing") - Number(a.source === "missing") || b.calls - a.calls);
+      }
+      case "list_project_summaries":
+        return mockProjects();
+      case "get_project_detail": {
+        const proj = mockProjects().find((x) => x.key === a.key) ?? mockProjects()[0];
+        const ses = sessions.filter((x) => `/${x.project}` === proj.key);
+        const detail = sessionDetail(ses[0]?.id ?? "s1");
+        const days = Math.floor((now - monthStart) / DAY) + 1;
+        return {
+          project: proj,
+          daily: Array.from({ length: days }, (_, i) => ({ ts: monthStart + i * DAY, costUsd: (proj.costUsd / days) * (0.4 + ((i * 7) % 5) * 0.3), calls: 20, sessions: 1, inputTokens: 0, outputTokens: 0, cacheRead: 0, cacheWrite: 0 })).filter((_, i) => i % 3 !== 1),
+          activities: [{ key: "feature", costUsd: proj.costUsd * 0.4, turns: 20, editTurns: 18, oneShot: 0.9 }, { key: "coding", costUsd: proj.costUsd * 0.3, turns: 30, editTurns: 30, oneShot: 0.95 }, { key: "testing", costUsd: proj.costUsd * 0.2, turns: 8, editTurns: 0, oneShot: null }, { key: "exploration", costUsd: proj.costUsd * 0.1, turns: 6, editTurns: 0, oneShot: null }],
+          models: detail.models.map((m) => ({ ...row(m.key, m.costUsd, m.calls), key: m.key })),
+          branches: [...new Set(ses.map((x) => x.branch))].map((b, i) => row(b, proj.costUsd / (i + 2), 100 - i * 20)),
+          sessions: ses,
+          tools: detail.tools,
+        };
       }
       case "list_sessions":
         return { sessions, total: sessions.length };
