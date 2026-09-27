@@ -54,6 +54,18 @@ pub struct SessionList {
     pub total: i64,
 }
 
+/// «AND col >= from AND col < to» con los límites del filtro incrustados (son i64).
+fn time_bounds(f: &Filter, col: &str) -> String {
+    let mut s = String::new();
+    if let Some(from) = f.from {
+        s.push_str(&format!(" AND {col} >= {from}"));
+    }
+    if let Some(to) = f.to {
+        s.push_str(&format!(" AND {col} < {to}"));
+    }
+    s
+}
+
 fn ratio(num: i64, den: i64) -> f64 {
     if den > 0 {
         num as f64 / den as f64
@@ -63,12 +75,26 @@ fn ratio(num: i64, den: i64) -> f64 {
 }
 
 /// Métricas por sesión de las llamadas que casan con `where_sql`, más recientes primero.
+/// `f` acota también turnos, herramientas, compactaciones, modelo y final de sesión al
+/// periodo del filtro: todo lo que se presenta pertenece al mismo intervalo.
 fn query_sessions(
     conn: &Connection,
+    f: &Filter,
     where_sql: &str,
     args: &[Value],
     limit: usize,
 ) -> Result<Vec<SessionRow>> {
+    let (t_turns, t_events, t_tools, t_calls) = (
+        time_bounds(f, "t.ts"),
+        time_bounds(f, "e.ts"),
+        time_bounds(f, "t.ts"),
+        time_bounds(f, "ts"),
+    );
+    // El final de sesión tampoco sale del periodo.
+    let ended = match f.to {
+        Some(to) => format!("MIN(MAX(sc.last, COALESCE(s.ended_at, 0)), {to})"),
+        None => "MAX(sc.last, COALESCE(s.ended_at, 0))".to_string(),
+    };
     let sql = format!(
         "WITH sc AS (
            SELECT c.session_id AS sid, SUM(c.cost_usd) AS cost, COUNT(*) AS calls,
@@ -81,15 +107,15 @@ fn query_sessions(
            SELECT session_id, model FROM (
              SELECT session_id, model,
                     ROW_NUMBER() OVER (PARTITION BY session_id ORDER BY SUM(cost_usd) DESC, COUNT(*) DESC, model) AS rn
-             FROM call_costs WHERE session_id IN (SELECT sid FROM sc) GROUP BY session_id, model)
+             FROM call_costs WHERE session_id IN (SELECT sid FROM sc){t_calls} GROUP BY session_id, model)
            WHERE rn = 1)
          SELECT s.id, s.agent_id, COALESCE(a.name, s.agent_id), p.id, p.name, s.git_branch,
-                sc.first, MAX(sc.last, COALESCE(s.ended_at, 0)), tm.model,
+                sc.first, {ended}, tm.model,
                 sc.cost, sc.calls, sc.cr, sc.tin, sc.tout, sc.hp, sc.side, s.is_subagent,
-                (SELECT COUNT(*) FROM turns t WHERE t.session_id = s.id),
-                (SELECT COUNT(*) FROM events e WHERE e.session_id = s.id AND e.kind = 'compaction'),
-                (SELECT COUNT(*) FROM tool_calls t WHERE t.session_id = s.id),
-                (SELECT COALESCE(SUM(t.is_error), 0) FROM tool_calls t WHERE t.session_id = s.id),
+                (SELECT COUNT(*) FROM turns t WHERE t.session_id = s.id{t_turns}),
+                (SELECT COUNT(*) FROM events e WHERE e.session_id = s.id AND e.kind = 'compaction'{t_events}),
+                (SELECT COUNT(*) FROM tool_calls t WHERE t.session_id = s.id{t_tools}),
+                (SELECT COALESCE(SUM(t.is_error), 0) FROM tool_calls t WHERE t.session_id = s.id{t_tools}),
                 p.repo_root
          FROM sc JOIN sessions s ON s.id = sc.sid
          LEFT JOIN agents a ON a.id = s.agent_id
@@ -136,7 +162,7 @@ fn query_sessions(
 pub fn list_sessions(conn: &Connection, f: &Filter, limit: Option<usize>) -> Result<SessionList> {
     let (w, args) = f.sql("c.ts");
     let limit = limit.unwrap_or(MAX_SESSIONS).min(MAX_SESSIONS);
-    let sessions = query_sessions(conn, &w, &args, limit)?;
+    let sessions = query_sessions(conn, f, &w, &args, limit)?;
     let total = conn.query_row(
         &format!(
             "SELECT COUNT(DISTINCT c.session_id) FROM call_costs c JOIN sessions s ON s.id = c.session_id WHERE {w}"
@@ -215,10 +241,17 @@ pub fn percentile(sorted: &[i64], p: f64) -> Option<i64> {
 }
 
 pub fn session_detail(conn: &Connection, id: &str) -> Result<SessionDetail> {
-    let session = query_sessions(conn, "c.session_id = ?", &[Value::from(id.to_string())], 1)?
-        .into_iter()
-        .next()
-        .with_context(|| format!("no existe la sesión {id}"))?;
+    // El detalle de una sesión muestra su historia completa: sin acotar por periodo.
+    let session = query_sessions(
+        conn,
+        &Filter::default(),
+        "c.session_id = ?",
+        &[Value::from(id.to_string())],
+        1,
+    )?
+    .into_iter()
+    .next()
+    .with_context(|| format!("no existe la sesión {id}"))?;
 
     // Coste acumulado llamada a llamada.
     let mut acc = 0.0;
@@ -583,7 +616,7 @@ fn top_models(conn: &Connection, f: &Filter) -> Result<HashMap<String, String>> 
 /// Proyectos con al menos una llamada en el filtro, con métricas de esas llamadas.
 pub fn list_projects(conn: &Connection, f: &Filter) -> Result<Vec<ProjectSummary>> {
     let (w, args) = f.sql("c.ts");
-    let rows = query_sessions(conn, &w, &args, MAX_AGGREGATED)?;
+    let rows = query_sessions(conn, f, &w, &args, MAX_AGGREGATED)?;
     summarize(conn, &rows, &top_models(conn, f)?)
 }
 
@@ -618,7 +651,7 @@ pub fn project_detail(
     if !key.is_empty() {
         args.push(Value::from(key.to_string()));
     }
-    let sessions = query_sessions(conn, &w, &args, MAX_AGGREGATED)?;
+    let sessions = query_sessions(conn, f, &w, &args, MAX_AGGREGATED)?;
     let project = summarize(conn, &sessions, &top_models(conn, f)?)?
         .into_iter()
         .find(|p| p.key == key)
@@ -646,8 +679,9 @@ pub fn project_detail(
     let mut per_tool: BTreeMap<String, (i64, i64, Vec<i64>)> = BTreeMap::new();
     for chunk in ids.chunks(500) {
         let marks = vec!["?"; chunk.len()].join(",");
+        let bounds = time_bounds(f, "ts");
         let mut stmt = conn.prepare(&format!(
-            "SELECT tool, is_error, duration_ms FROM tool_calls WHERE session_id IN ({marks})"
+            "SELECT tool, is_error, duration_ms FROM tool_calls WHERE session_id IN ({marks}){bounds}"
         ))?;
         let mut rows = stmt.query(params_from_iter(chunk.iter()))?;
         while let Some(r) = rows.next()? {
@@ -756,6 +790,14 @@ mod tests {
         // Solo m2 (1.5) y m5 (1) caen en el periodo.
         assert!((l.sessions[0].cost_usd - 2.5).abs() < 1e-9);
         assert_eq!(l.sessions[0].started_at, 4000);
+        // Las demás métricas también son del periodo, no de toda la historia de la sesión:
+        // queda fuera el turno t1 (ts 1000), la herramienta u1 y la compactación (ts 3000).
+        let s1 = &l.sessions[0];
+        assert_eq!(
+            (s1.turns, s1.compactions, s1.tool_calls, s1.tool_errors),
+            (1, 0, 3, 1)
+        );
+        assert!(s1.ended_at <= 6000, "el final no sale del periodo");
     }
 
     #[test]
