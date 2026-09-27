@@ -15,14 +15,12 @@ describe("todayRanges", () => {
 describe("lastUsedSession", () => {
   const s = (id: string, startedAt: number, endedAt: number) => ({ id, startedAt, endedAt }) as SessionRow;
   const now = 100 * ACTIVE_MS;
-  it("con varias activas, solo la abierta más recientemente", () => {
-    // Claude Code lleva horas escribiendo; hay dos de Codex, la última abierta hace 1 min.
+  it("la de datos más recientes, aunque se abriera hace horas", () => {
     const claude = s("claude", now - 28 * ACTIVE_MS, now - 1000);
-    const codexOld = s("codex-1", now - 13 * 60_000, now - 60_000);
-    const codexNew = s("codex-2", now - 60_000, now - 30_000);
-    expect(lastUsedSession([claude, codexOld, codexNew], now)).toEqual({ session: codexNew, active: true });
+    const codex = s("codex", now - 60_000, now - 30_000);
+    expect(lastUsedSession([codex, claude], now)).toEqual({ session: claude, active: true });
   });
-  it("sin activas, la de actividad más reciente", () => {
+  it("marca si ya no está activa", () => {
     expect(lastUsedSession([s("a", 0, now - 5 * ACTIVE_MS), s("b", 0, now - 2 * ACTIVE_MS)], now)).toEqual({ session: s("b", 0, now - 2 * ACTIVE_MS), active: false });
     expect(lastUsedSession([], now)).toBeNull();
   });

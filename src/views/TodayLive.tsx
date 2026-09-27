@@ -17,16 +17,10 @@ export function todayRanges(now: number) {
   return { today, yesterday, sameTimeYesterday: now - DAY_MS };
 }
 
-/**
- * La última sesión que se usó: entre las activas (llamadas en los últimos 15 min), la abierta
- * más recientemente, para que una sesión larga que sigue escribiendo no tape a la que se acaba
- * de abrir; si no hay ninguna activa, la de actividad más reciente.
- */
+/** La última sesión que se usó: la de datos más recientes, y si sigue activa (últimos 15 min). */
 export function lastUsedSession(rows: SessionRow[], now: number): { session: SessionRow; active: boolean } | null {
-  const active = rows.filter((s) => now - s.endedAt < ACTIVE_MS);
-  if (active.length) return { session: active.reduce((a, b) => (b.startedAt > a.startedAt ? b : a)), active: true };
   const last = rows.reduce<SessionRow | null>((a, b) => (!a || b.endedAt > a.endedAt ? b : a), null);
-  return last ? { session: last, active: false } : null;
+  return last ? { session: last, active: now - last.endedAt < ACTIVE_MS } : null;
 }
 
 interface Live {
