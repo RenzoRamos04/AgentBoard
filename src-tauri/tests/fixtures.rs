@@ -502,3 +502,94 @@ fn cursor_fixture() {
         .unwrap();
     assert_eq!(ts, 1_790_257_920_000, "24 sep 2026 06:52 UTC-7 = 13:52 UTC");
 }
+
+// ---------------------------------------------------------------------------
+// Relectura en vivo: un log leído en dos pasadas, con proveedores distintos en cada una (como
+// el vigilante), debe dar lo mismo que leerlo de una vez. Codex, Gemini, Cursor y Copilot solo
+// identifican la sesión en sus primeras líneas.
+
+fn copy_dir(from: &std::path::Path, to: &std::path::Path) {
+    std::fs::create_dir_all(to).unwrap();
+    for e in std::fs::read_dir(from).unwrap().flatten() {
+        let dest = to.join(e.file_name());
+        if e.file_type().unwrap().is_dir() {
+            copy_dir(&e.path(), &dest);
+        } else {
+            std::fs::copy(e.path(), dest).unwrap();
+        }
+    }
+}
+
+fn biggest_jsonl(dir: &std::path::Path) -> PathBuf {
+    let mut best: Option<(u64, PathBuf)> = None;
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        for e in std::fs::read_dir(&d).unwrap().flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                stack.push(p);
+            } else if p.extension().is_some_and(|x| x == "jsonl") {
+                let len = p.metadata().unwrap().len();
+                if best.as_ref().is_none_or(|(l, _)| len > *l) {
+                    best = Some((len, p));
+                }
+            }
+        }
+    }
+    best.unwrap().1
+}
+
+fn totals(conn: &rusqlite::Connection) -> (i64, i64, i64, i64) {
+    let q = |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get(0)).unwrap() };
+    (
+        q("SELECT COUNT(*) FROM calls"),
+        q("SELECT COUNT(*) FROM sessions"),
+        q("SELECT COUNT(*) FROM tool_calls"),
+        q("SELECT COUNT(*) FROM turns"),
+    )
+}
+
+fn read_in_two_passes(fixture: &str, sub: &str, make: fn(Vec<PathBuf>) -> Box<dyn Provider>) {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join(sub);
+    copy_dir(&fixtures(fixture).join(sub), &root);
+
+    // Referencia: todo de una vez.
+    let mut whole = db::open_in_memory().unwrap();
+    let stats = ingest::scan_all(&mut whole, &[make(vec![root.clone()])]).unwrap();
+    assert_eq!(stats.errors, 0, "{fixture}: lectura completa");
+    let expected = totals(&whole);
+
+    // Primera pasada con el archivo a medias; la segunda, con otra instancia del proveedor.
+    let file = biggest_jsonl(&root);
+    let full = std::fs::read_to_string(&file).unwrap();
+    let lines: Vec<&str> = full.lines().collect();
+    let half = lines[..lines.len() / 2].join("\n") + "\n";
+    std::fs::write(&file, &half).unwrap();
+    let mut conn = db::open_in_memory().unwrap();
+    ingest::scan_all(&mut conn, &[make(vec![root.clone()])]).unwrap();
+    std::fs::write(&file, &full).unwrap();
+    let second = ingest::scan_all(&mut conn, &[make(vec![root.clone()])]).unwrap();
+    assert_eq!(
+        second.errors, 0,
+        "{fixture}: la segunda pasada no debe fallar"
+    );
+    assert_eq!(
+        totals(&conn),
+        expected,
+        "{fixture}: dos pasadas = una lectura completa"
+    );
+}
+
+#[test]
+fn relectura_en_dos_pasadas_de_agentes_con_estado() {
+    use agentboard_lib::providers::{
+        codex::Codex, copilot::Copilot, cursor::Cursor, gemini::Gemini,
+    };
+    read_in_two_passes("codex", "sessions", |r| Box::new(Codex::with_roots(r)));
+    read_in_two_passes("gemini", "tmp", |r| Box::new(Gemini::with_roots(r)));
+    read_in_two_passes("cursor", "projects", |r| Box::new(Cursor::with_roots(r)));
+    read_in_two_passes("copilot", "session-state", |r| {
+        Box::new(Copilot::with_roots(r))
+    });
+}
