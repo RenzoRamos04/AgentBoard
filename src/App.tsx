@@ -4,7 +4,7 @@ import { api, type AgentRow, type Filter, type ProjectRow, type Settings } from 
 import { periodRange, previousRange, type Period } from "./lib/period";
 import { applyTheme, storedTheme } from "./lib/theme";
 import { LangContext, resolveLang, setLang, t, type LangSetting } from "./lib/i18n";
-import type { SectionId } from "./lib/sections";
+import { SECTIONS, type SectionId } from "./lib/sections";
 import { useDashboardData } from "./lib/useData";
 import { Sidebar } from "./components/Sidebar";
 import { Topbar } from "./components/Topbar";
@@ -33,7 +33,10 @@ function storedLang(): LangSetting {
 export default function App() {
   // En desarrollo, `?s=<apartado>&id=<sesión>` abre directamente esa vista (capturas de pantalla).
   const devParams = import.meta.env.DEV ? new URLSearchParams(location.search) : null;
-  const [section, setSectionState] = useState<SectionId>(() => (devParams?.get("s") as SectionId | null) ?? "overview");
+  const [section, setSectionState] = useState<SectionId>(() => {
+    const s = devParams?.get("s");
+    return SECTIONS.some((x) => x.id === s) ? (s as SectionId) : "overview";
+  });
   // Proyecto y sesión abiertos en el apartado Proyectos; al cambiar de apartado se vuelve al listado.
   const [projectKey, setProjectKey] = useState<string | null>(() => devParams?.get("p") ?? null);
   const [sessionId, setSessionId] = useState<string | null>(() => devParams?.get("id") ?? null);
@@ -191,6 +194,9 @@ export default function App() {
   else if (!data) content = <div className="main muted">{t("Cargando…")}</div>;
   else if (section === "heatmap") content = <Heatmap data={data} period={period} />;
   else if (section === "overview")
+    content = <Overview data={data} period={period} budget={settings.monthlyBudget} singleProject={singleProject} open={setSection} openSession={openSession} />;
+  else if (!SECTIONS.some((x) => x.id === section))
+    // Apartado que ya no existe (p. ej. tras una actualización en caliente): al resumen.
     content = <Overview data={data} period={period} budget={settings.monthlyBudget} singleProject={singleProject} open={setSection} openSession={openSession} />;
   else content = <Section id={section} data={data} period={period} singleProject={singleProject} back={() => setSection("overview")} />;
 
