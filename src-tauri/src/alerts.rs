@@ -13,7 +13,8 @@ use tauri_plugin_notification::NotificationExt;
 /// Un presupuesto frente a su valor actual (proyección del mes o gasto del día).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Check {
-    /// Identifica el presupuesto para no repetir avisos (`month`, `day`, `project:/repo`…).
+    /// Identifica el presupuesto y su periodo para no repetir avisos y volver a avisar al
+    /// cambiar de día o de mes (`month:2026-09`, `day:2026-09-27`, `project:/repo:2026-09`…).
     pub id: String,
     /// «tu presupuesto mensual», «el presupuesto de Codex CLI»…
     pub name: String,
@@ -71,11 +72,19 @@ pub fn pending(
             notified.insert(k80);
         }
     }
+    // Depura los umbrales de periodos pasados: al cambiar el día o el mes cambia la clave,
+    // así que el mismo presupuesto vuelve a avisar (la app puede vivir días en la bandeja).
+    notified.retain(|k| {
+        checks.iter().any(|c| {
+            k.strip_prefix(c.id.as_str())
+                .is_some_and(|r| r.starts_with(':'))
+        })
+    });
     out
 }
 
 /// Inicio del día local en curso (epoch ms).
-fn today_start() -> i64 {
+pub fn today_start() -> i64 {
     use chrono::{Local, TimeZone};
     let now = Local::now().date_naive();
     Local
@@ -102,10 +111,13 @@ pub fn today_spent(conn: &Connection) -> Result<f64> {
 /// Comprobaciones de todos los presupuestos de los ajustes.
 pub fn checks(conn: &Connection, s: &settings::Settings) -> Result<Vec<Check>> {
     let mut out = Vec::new();
+    // El periodo forma parte de la identidad del aviso (ver `Check::id`).
+    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+    let month_key = &today[..7];
     let (_, projection) = queries::month_progress(conn, &queries::Filter::default())?;
     if let Some(b) = s.monthly_budget {
         out.push(Check {
-            id: "month".into(),
+            id: format!("month:{month_key}"),
             name: "tu presupuesto mensual".into(),
             measure: "La proyección del mes",
             value: projection,
@@ -115,7 +127,7 @@ pub fn checks(conn: &Connection, s: &settings::Settings) -> Result<Vec<Check>> {
     if let Some(b) = s.daily_budget {
         let spent = today_spent(conn)?;
         out.push(Check {
-            id: "day".into(),
+            id: format!("day:{today}"),
             name: "tu presupuesto diario".into(),
             measure: "El gasto de hoy",
             value: spent,
@@ -141,7 +153,7 @@ pub fn checks(conn: &Connection, s: &settings::Settings) -> Result<Vec<Check>> {
                 .find(|r| r.key == b.key)
                 .map_or(0.0, |r| r.cost_usd);
             out.push(Check {
-                id: format!("{}:{}", b.kind, b.key),
+                id: format!("{}:{}:{month_key}", b.kind, b.key),
                 name: format!("el presupuesto de {}", b.label),
                 measure: "La proyección del mes",
                 value: spent * factor,
@@ -315,10 +327,54 @@ mod tests {
             ..Default::default()
         };
         let c = checks(&conn, &s).unwrap();
-        assert_eq!(
-            c.iter().map(|x| x.id.as_str()).collect::<Vec<_>>(),
-            vec!["month", "day", "agent:codex"]
+        let ids: Vec<&str> = c.iter().map(|x| x.id.as_str()).collect();
+        assert_eq!(ids.len(), 3);
+        assert!(ids[0].starts_with("month:2"), "mes con periodo: {}", ids[0]);
+        assert!(
+            ids[1].starts_with("day:2") && ids[1].len() == "day:2026-09-27".len(),
+            "día con fecha: {}",
+            ids[1]
+        );
+        assert!(
+            ids[2].starts_with("agent:codex:2"),
+            "presupuesto por ámbito con mes: {}",
+            ids[2]
         );
         assert!(c.iter().all(|x| x.value >= 0.0));
+    }
+
+    #[test]
+    fn el_aviso_caduca_al_cambiar_de_dia() {
+        let mut notified = HashSet::new();
+        assert_eq!(
+            pending(
+                &[check("day:2026-09-27", 31.0, 30.0)],
+                &mut notified,
+                Thresholds::ALL
+            )
+            .len(),
+            1
+        );
+        // Mismo día: no repite.
+        assert!(pending(
+            &[check("day:2026-09-27", 31.0, 30.0)],
+            &mut notified,
+            Thresholds::ALL
+        )
+        .is_empty());
+        // Al día siguiente la clave cambia: avisa de nuevo y depura la del día anterior.
+        assert_eq!(
+            pending(
+                &[check("day:2026-09-28", 31.0, 30.0)],
+                &mut notified,
+                Thresholds::ALL
+            )
+            .len(),
+            1
+        );
+        assert!(
+            !notified.iter().any(|k| k.contains("2026-09-27")),
+            "las claves del día anterior se depuran"
+        );
     }
 }
