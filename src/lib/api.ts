@@ -125,6 +125,42 @@ export interface SessionRow {
   toolErrors: number;
   subagentCalls: number;
   isSubagent: boolean;
+  /** Raíz del repo del proyecto; `null` sin proyecto. */
+  projectKey: string | null;
+}
+
+export interface ProjectSummary {
+  /** Raíz del repo; "" para las sesiones sin proyecto. */
+  key: string;
+  projectId: number | null;
+  name: string;
+  path: string | null;
+  agents: { id: string; name: string }[];
+  branches: string[];
+  model: string | null;
+  sessions: number;
+  activeMs: number;
+  turns: number;
+  compactions: number;
+  toolCalls: number;
+  toolErrors: number;
+  subagentCalls: number;
+  costUsd: number;
+  calls: number;
+  cacheHit: number;
+  hasPrice: boolean;
+  firstTs: number;
+  lastTs: number;
+}
+
+export interface ProjectDetail {
+  project: ProjectSummary;
+  daily: Point[];
+  activities: ActivityRow[];
+  models: BreakdownRow[];
+  branches: BreakdownRow[];
+  sessions: SessionRow[];
+  tools: ToolStat[];
 }
 
 export interface SessionList {
@@ -240,6 +276,8 @@ export const api = {
   insights: (filter: Filter) => invoke<Insight[]>("get_insights", { filter, tzOffsetMin: tzOffsetMin() }),
   prices: (filter: Filter) => invoke<PriceRow[]>("list_prices", { filter }),
   sessions: (filter: Filter, limit?: number) => invoke<SessionList>("list_sessions", { filter, limit }),
+  projectSummaries: (filter: Filter) => invoke<ProjectSummary[]>("list_project_summaries", { filter }),
+  projectDetail: (key: string, filter: Filter) => invoke<ProjectDetail>("get_project_detail", { key, filter, tzOffsetMin: tzOffsetMin() }),
   sessionDetail: (id: string) => invoke<SessionDetail>("get_session_detail", { id }),
   dataInfo: () => invoke<DataInfo>("get_data_info"),
   settings: () => invoke<Settings>("get_settings"),

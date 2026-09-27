@@ -12,7 +12,8 @@ import { SettingsDialog } from "./components/SettingsDialog";
 import { TooltipProvider } from "./components/Tooltip";
 import { Overview } from "./views/Overview";
 import { Section } from "./views/Section";
-import { Sessions } from "./views/Sessions";
+import { Projects } from "./views/Projects";
+import { ProjectDetail } from "./views/ProjectDetail";
 import { SessionDetail } from "./views/SessionDetail";
 import { Pricing } from "./views/Pricing";
 import { Heatmap } from "./views/Heatmap";
@@ -33,11 +34,17 @@ export default function App() {
   // En desarrollo, `?s=<apartado>&id=<sesión>` abre directamente esa vista (capturas de pantalla).
   const devParams = import.meta.env.DEV ? new URLSearchParams(location.search) : null;
   const [section, setSectionState] = useState<SectionId>(() => (devParams?.get("s") as SectionId | null) ?? "overview");
-  // Sesión abierta en el apartado Sesiones; al cambiar de apartado se vuelve al listado.
+  // Proyecto y sesión abiertos en el apartado Proyectos; al cambiar de apartado se vuelve al listado.
+  const [projectKey, setProjectKey] = useState<string | null>(() => devParams?.get("p") ?? null);
   const [sessionId, setSessionId] = useState<string | null>(() => devParams?.get("id") ?? null);
   const setSection = (s: SectionId) => {
     setSectionState(s);
+    setProjectKey(null);
     setSessionId(null);
+  };
+  const openSession = (id: string) => {
+    setSectionState("projects");
+    setSessionId(id);
   };
   const [period, setPeriod] = useState<Period>({ kind: "30d" });
   // Se guardan los *ocultos*: un agente o proyecto nuevo aparece incluido por defecto.
@@ -170,11 +177,13 @@ export default function App() {
   };
 
   let content;
-  if (section === "sessions")
+  if (section === "projects")
     content = sessionId ? (
-      <SessionDetail id={sessionId} refresh={refresh} back={() => setSessionId(null)} />
+      <SessionDetail id={sessionId} refresh={refresh} back={() => setSessionId(null)} backLabel={projectKey != null ? t("‹ Volver al proyecto") : t("‹ Proyectos")} />
+    ) : projectKey != null ? (
+      <ProjectDetail projectKey={projectKey} filter={filter} refresh={refresh} back={() => setProjectKey(null)} openSession={setSessionId} />
     ) : (
-      <Sessions filter={filter} period={period} refresh={refresh} open={setSessionId} />
+      <Projects filter={filter} period={period} refresh={refresh} open={setProjectKey} />
     );
   else if (section === "pricing")
     content = <Pricing filter={filter} refresh={refresh} settings={settings} onSave={saveSettings} agents={agents} />;
@@ -182,7 +191,7 @@ export default function App() {
   else if (!data) content = <div className="main muted">{t("Cargando…")}</div>;
   else if (section === "heatmap") content = <Heatmap data={data} period={period} />;
   else if (section === "overview")
-    content = <Overview data={data} period={period} budget={settings.monthlyBudget} singleProject={singleProject} open={setSection} />;
+    content = <Overview data={data} period={period} budget={settings.monthlyBudget} singleProject={singleProject} open={setSection} openSession={openSession} />;
   else content = <Section id={section} data={data} period={period} singleProject={singleProject} back={() => setSection("overview")} />;
 
   return (
@@ -227,8 +236,8 @@ export default function App() {
           goSection={setSection}
           onlyProject={(id) => onlyProject(id)}
           openSession={(id) => {
-            setSectionState("sessions");
-            setSessionId(id);
+            setProjectKey(null);
+            openSession(id);
           }}
           openSettings={() => setShowSettings(true)}
         />

@@ -31,7 +31,7 @@ export function afterCompaction(turns: { ts: number; costUsd: number }[], compac
   return { k, ratio: b > 0 ? avg(after) / b : null };
 }
 
-export function SessionDetail({ id, refresh, back }: { id: string; refresh: number; back: () => void }) {
+export function SessionDetail({ id, refresh, back, backLabel }: { id: string; refresh: number; back: () => void; backLabel?: string }) {
   const [d, setD] = useState<Detail | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -126,7 +126,7 @@ export function SessionDetail({ id, refresh, back }: { id: string; refresh: numb
     <div className="main">
       <header className="page-head">
         <button className="link back" onClick={back}>
-          {t("‹ Sesiones")}
+          {backLabel ?? t("‹ Proyectos")}
         </button>
         <div className="session-title">
           <h1>

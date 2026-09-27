@@ -7,7 +7,7 @@ const num = (v: string | number | undefined) => Number(v ?? 0);
 const str = (v: string | number | undefined) => String(v ?? "");
 
 /** Título, texto y enlace de un aviso, en el idioma activo. */
-export function describe(i: Insight): { title: string; body: string; cta: string; section: SectionId } {
+export function describe(i: Insight): { title: string; body: string; cta: string; section: SectionId; sessionId?: string } {
   const p = i.params;
   switch (i.kind) {
     case "compactions": {
@@ -15,8 +15,9 @@ export function describe(i: Insight): { title: string; body: string; cta: string
       return {
         title: num(p.n) === 1 ? t("1 sesión con 3+ compactaciones") : t("{n} sesiones con 3+ compactaciones", { n: num(p.n) }),
         body: t("La peor ({max} compactaciones) en {place}. Divide la tarea o delega en subagentes.", { max: num(p.max), place }),
-        cta: t("Ver sesiones"),
-        section: "sessions",
+        cta: p.sessionId ? t("Ver la sesión") : t("Ver proyectos"),
+        section: "projects",
+        sessionId: p.sessionId ? str(p.sessionId) : undefined,
       };
     }
     case "expensive_model":
@@ -61,7 +62,7 @@ export function describe(i: Insight): { title: string; body: string; cta: string
 const MARK = { critical: "!", warn: "!", info: "i" } as const;
 
 /** Tarjeta «Lo que deberías saber» de la portada. */
-export function Insights({ items, open }: { items: Insight[]; open: (s: SectionId) => void }) {
+export function Insights({ items, open, openSession }: { items: Insight[]; open: (s: SectionId) => void; openSession: (id: string) => void }) {
   if (!items.length)
     return (
       <div className="insight insight-ok">
@@ -86,7 +87,7 @@ export function Insights({ items, open }: { items: Insight[]; open: (s: SectionI
             <div className="insight-text">
               <b>{d.title}</b>
               <span>{d.body}</span>
-              <button className="link" onClick={() => open(d.section)}>
+              <button className="link" onClick={() => (d.sessionId ? openSession(d.sessionId) : open(d.section))}>
                 {d.cta} ›
               </button>
             </div>
