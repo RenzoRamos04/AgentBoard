@@ -7,7 +7,7 @@ Organiza la ventana de AgentBoard: un panel lateral para navegar, una barra supe
 ## ADDED Requirements
 
 ### Requirement: Panel lateral agrupado
-El panel lateral SHALL mostrar el logo de AgentBoard (versión oscura en tema oscuro y clara en tema claro) y los apartados agrupados bajo los encabezados *Coste*, *Trabajo* y *Herramientas*, conservando el orden de apartados de la v0.1, con Ajustes al pie. SHALL poder colapsarse a solo iconos y recordar ese estado.
+El panel lateral SHALL mostrar el logo de AgentBoard (versión oscura en tema oscuro y clara en tema claro) y los apartados agrupados bajo los encabezados *Coste*, *Trabajo* y *Herramientas*, conservando dentro de cada grupo el orden de apartados de la v0.1 (By Activity pasa a *Trabajo*), con Ajustes al pie. SHALL poder colapsarse a solo iconos y recordar ese estado.
 
 #### Scenario: Tema claro
 - **WHEN** el tema activo es claro
