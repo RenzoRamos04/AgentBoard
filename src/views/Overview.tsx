@@ -134,6 +134,19 @@ export function Overview({
         <div className="notice">{t('No hay llamadas en este periodo. Si acabas de instalar la app, espera a que termine el escaneo inicial o elige "Todo".')}</div>
       )}
       <Kpis items={summaryKpis(data, budget)} />
+      {data.summary.unpricedModels.length > 0 && (
+        <div className="notice warn notice-row">
+          <span>
+            {t(data.summary.unpricedModels.length === 1 ? "1 modelo sin precio ({m}): sus llamadas cuentan como $0." : "{n} modelos sin precio ({m}): sus llamadas cuentan como $0.", {
+              n: data.summary.unpricedModels.length,
+              m: data.summary.unpricedModels.slice(0, 3).join(", ") + (data.summary.unpricedModels.length > 3 ? "…" : ""),
+            })}
+          </span>
+          <button className="link" onClick={() => open("pricing")}>
+            {t("Completar precios ›")}
+          </button>
+        </div>
+      )}
       {over && <div className="notice warn">{t("⚠ La proyección del mes supera el presupuesto de {b}.", { b: fmt.usd(budget!) })}</div>}
       <div className="grid-top">
         <Panel id="daily" title={t("Gasto diario")} question={data.prev ? t("por agente · línea discontinua = periodo anterior") : t("por agente")} onOpen={() => open("daily")} openLabel={t("Daily Activity ›")}>
