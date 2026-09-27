@@ -75,3 +75,20 @@ describe("level", () => {
     expect(level(3, 0)).toBe(0);
   });
 });
+
+import { monthCalendars } from "../Heatmap";
+describe("monthCalendars", () => {
+  it("un calendario por mes del periodo, con huecos hasta el lunes y el coste de cada día", () => {
+    const now = new Date(2026, 8, 27, 12); // 27 sep 2026
+    const from = new Date(2026, 7, 29).getTime(); // 29 ago
+    const p = (d: Date, costUsd: number) => ({ ts: d.getTime(), costUsd, calls: 1, sessions: 1, inputTokens: 0, outputTokens: 0, cacheRead: 0, cacheWrite: 0 });
+    const ms = monthCalendars([p(new Date(2026, 8, 25), 233.4)], { from }, now);
+    expect(ms.map((m) => m.month)).toEqual([7, 8]); // agosto y septiembre
+    expect(ms[0].offset).toBe(5); // 1 ago 2026 fue sábado
+    expect(ms[0].days[27].inPeriod).toBe(false); // 28 ago
+    expect(ms[0].days[28].inPeriod).toBe(true); // 29 ago
+    expect(ms[1].days[24].cost).toBe(233.4);
+    expect(ms[1].days[26].today).toBe(true);
+    expect(ms[1].days[27].inPeriod).toBe(false); // 28 sep, futuro
+  });
+});

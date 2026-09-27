@@ -597,3 +597,18 @@ kbd { font-family: var(--font-mono); font-size: 10px; color: var(--text-secondar
 svg .axis-label { fill: var(--text-muted); font-family: var(--font-mono); font-size: 10px; }
 svg .baseline { stroke: var(--border); stroke-width: 1; }
 svg .grid { stroke-dasharray: 3 3; }
+
+/* Calendarios del Heatmap: un cuadro por día del mes */
+.calendars { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 24px 32px; padding: 4px 0; }
+.calendar { display: flex; flex-direction: column; gap: 10px; }
+.calendar-title { font-size: 12.5px; font-weight: 600; color: var(--text-primary); }
+.calendar-title::first-letter { text-transform: uppercase; }
+.calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 5px; max-width: 320px; }
+.calendar-weekday { font-size: 10px; color: var(--text-muted); text-align: center; text-transform: uppercase; }
+.calendar-day { aspect-ratio: 1; border-radius: 7px; display: flex; align-items: center; justify-content: center; font-size: 11px; font-family: var(--font-mono); color: var(--text-secondary); transition: transform 0.1s; cursor: default; }
+.calendar-day:hover { transform: scale(1.08); outline: 1px solid var(--text-secondary); outline-offset: 1px; }
+.calendar-day.strong { color: var(--accent-ink); font-weight: 600; }
+.calendar-day.outside { opacity: 0.35; }
+.calendar-day.outside:hover { transform: none; outline: none; }
+.calendar-day.today { box-shadow: inset 0 0 0 1.5px var(--text-muted); }
+.calendar-day.peak { outline: 2px solid var(--text-primary); outline-offset: 2px; }

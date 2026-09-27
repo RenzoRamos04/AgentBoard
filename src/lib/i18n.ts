@@ -506,6 +506,11 @@ const en: Dict = {
   "Va bien": "Going well",
   "Por día de la semana": "By day of the week",
   "coste del periodo": "cost for the period",
+  "Coste por día": "Cost per day",
+  "cada cuadro es un día · cuanto más intenso, más gasto": "each square is a day · the more intense, the more spend",
+  "Día de más gasto": "Costliest day",
+  "Días con actividad": "Active days",
+  "{p} de los días del periodo": "{p} of the days in the period",
 };
 
 const pt: Dict = {
@@ -973,6 +978,11 @@ const pt: Dict = {
   "Va bien": "Vai bem",
   "Por día de la semana": "Por dia da semana",
   "coste del periodo": "custo do período",
+  "Coste por día": "Custo por dia",
+  "cada cuadro es un día · cuanto más intenso, más gasto": "cada quadrado é um dia · quanto mais intenso, mais gasto",
+  "Día de más gasto": "Dia de maior gasto",
+  "Días con actividad": "Dias com atividade",
+  "{p} de los días del periodo": "{p} dos dias do período",
 };
 
 const fr: Dict = {
@@ -1440,6 +1450,11 @@ const fr: Dict = {
   "Va bien": "Ça va bien",
   "Por día de la semana": "Par jour de la semaine",
   "coste del periodo": "coût de la période",
+  "Coste por día": "Coût par jour",
+  "cada cuadro es un día · cuanto más intenso, más gasto": "chaque case est un jour · plus c'est intense, plus on dépense",
+  "Día de más gasto": "Jour le plus coûteux",
+  "Días con actividad": "Jours avec activité",
+  "{p} de los días del periodo": "{p} des jours de la période",
 };
 
 const DICTS: Record<Lang, Dict> = { es: {}, en, pt, fr };
