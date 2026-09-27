@@ -73,6 +73,15 @@ function sessionDetail(id: string) {
   };
 }
 
+function mockSettings() {
+  return {
+    theme: "system", language: "system", monthlyBudget: 60, dailyBudget: 5,
+    budgets: [{ kind: "agent", key: "codex", label: "Codex CLI", monthly: 5 }, { kind: "project", key: "AgentBoard", label: "AgentBoard", monthly: 40 }],
+    priceOverrides: [{ model: "claude-haiku-4-5", input: 0.8, output: 4, cacheRead: 0.08, cacheWrite: 1, cacheWrite1h: 1.6 }],
+    ...JSON.parse(localStorage.getItem("mockSettings") ?? "{}"),
+  };
+}
+
 export function installMocks() {
   mockIPC((cmd, args) => {
     const a = args as Record<string, unknown>;
@@ -189,6 +198,20 @@ export function installMocks() {
           { id: 3, name: "infra", cwd: "/home/u/infra", costUsd: 9.2, calls: 700 },
           { id: 4, name: "scripts", cwd: "/home/u/scripts", costUsd: 6.3, calls: 890 },
         ];
+      case "list_prices": {
+        const overrides = new Map((mockSettings().priceOverrides as { model: string; input: number; output: number; cacheRead: number; cacheWrite: number; cacheWrite1h: number }[]).map((p) => [p.model, p]));
+        const base: [string, number[] | null, number][] = [
+          ["modelo-local", null, 12], ["kimi-k2", null, 148], ["claude-fable-5-1", [10, 50, 0.25, 12.5, 20], 742], ["claude-opus-5-5", [4, 20, 0.2, 5, 8], 1840],
+          ["claude-sonnet-5", [2, 10, 0.2, 2.5, 4], 1210], ["claude-haiku-4-5", [1, 5, 0.1, 1.25, 2], 410], ["gpt-5-codex", [1.25, 10, 0.125, 0, 0], 320],
+          ["big-pickle", null, 40], ["gemini-3-pro", [2, 12, 0.2, 0, 0], 0], ["o3", [2, 8, 0.5, 0, 0], 0],
+        ];
+        return base.map(([model, prices, calls]) => {
+          const o = overrides.get(model);
+          const p = o ? [o.input, o.output, o.cacheRead, o.cacheWrite, o.cacheWrite1h] : prices;
+          const source = o ? "edited" : prices ? "default" : model === "big-pickle" ? "reported" : "missing";
+          return { model, prices: p, source, calls, costUsd: p ? calls * 0.01 : 0 };
+        }).sort((a, b) => Number(b.source === "missing") - Number(a.source === "missing") || b.calls - a.calls);
+      }
       case "list_sessions":
         return { sessions, total: sessions.length };
       case "get_session_detail":
@@ -198,7 +221,7 @@ export function installMocks() {
       case "export_data":
         return a.format === "json" ? "[]" : "ts,iso,agent,project,branch,model,input_tokens,output_tokens,cost_usd\n";
       case "get_settings":
-        return { theme: "system", language: "system", monthlyBudget: 60, ...JSON.parse(localStorage.getItem("mockSettings") ?? "{}") };
+        return mockSettings();
       case "set_settings":
         localStorage.setItem("mockSettings", JSON.stringify(a.settings));
         return a.settings;
