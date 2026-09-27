@@ -39,6 +39,12 @@ pub trait Provider: Send + Sync {
     fn knows(&self, _path: &Path) -> bool {
         true
     }
+
+    /// El archivo es un documento completo (p. ej. un `.json` con todo el historial), no un
+    /// log por líneas: se relee entero cuando cambia y se parsea de una sola vez.
+    fn whole_file(&self, _path: &Path) -> bool {
+        false
+    }
     /// Solo para `Source::Sqlite`: registros modificados después de `since` y el nuevo cursor.
     fn read_db(&self, _path: &Path, since: i64) -> Result<(Vec<Record>, i64)> {
         Ok((vec![], since))

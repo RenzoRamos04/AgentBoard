@@ -164,10 +164,12 @@ pub fn ingest_file(
     {
         return Ok(FileResult::default());
     }
+    // Un documento completo (no JSONL) se relee entero cada vez que cambia.
+    let whole = provider.whole_file(path);
     let start = match &prev {
         // A mitad de archivo solo si el proveedor conserva su estado; si no, se relee entero
         // (idempotente: llamadas, herramientas, turnos y eventos tienen id propio).
-        Some((fid, off)) if same_file(fid, *off) && provider.knows(path) => *off,
+        Some((fid, off)) if !whole && same_file(fid, *off) && provider.knows(path) => *off,
         _ => 0,
     };
     if start == 0 {
@@ -180,22 +182,21 @@ pub fn ingest_file(
     f.read_to_end(&mut buf)?;
 
     // Solo líneas completas; lo que quede tras el último \n espera a la siguiente pasada.
-    let consumed = buf
-        .iter()
-        .rposition(|b| *b == b'\n')
-        .map(|i| i + 1)
-        .unwrap_or(0);
+    // (Un documento completo no tiene por qué acabar en salto de línea: se consume entero.)
+    let consumed = if whole {
+        buf.len()
+    } else {
+        buf.iter()
+            .rposition(|b| *b == b'\n')
+            .map(|i| i + 1)
+            .unwrap_or(0)
+    };
     let mut result = FileResult::default();
     let tx = conn.transaction()?;
     ensure_agent(&tx, provider)?;
     {
         let mut w = Writer::new(&tx, provider.id());
-        for raw in buf[..consumed].split(|b| *b == b'\n') {
-            let line = String::from_utf8_lossy(raw);
-            let line = line.trim();
-            if line.is_empty() {
-                continue;
-            }
+        let mut feed = |line: &str, result: &mut FileResult| -> Result<()> {
             result.lines += 1;
             match provider.parse_line(path, line) {
                 Ok(records) => {
@@ -207,6 +208,24 @@ pub fn ingest_file(
                     }
                 }
                 Err(_) => result.bad_lines += 1,
+            }
+            Ok(())
+        };
+        if whole {
+            // Documento completo: todo el archivo es un único registro (aunque tenga saltos).
+            let text = String::from_utf8_lossy(&buf);
+            let text = text.trim();
+            if !text.is_empty() {
+                feed(text, &mut result)?;
+            }
+        } else {
+            for raw in buf[..consumed].split(|b| *b == b'\n') {
+                let line = String::from_utf8_lossy(raw);
+                let line = line.trim();
+                if line.is_empty() {
+                    continue;
+                }
+                feed(line, &mut result)?;
             }
         }
         w.backfill_turns()?;
@@ -221,7 +240,12 @@ pub fn ingest_file(
             provider.id(),
             file_id,
             size,
-            start + consumed as i64,
+            // Un documento que aún no parsea (escritura a medias) se reintenta desde 0.
+            if whole && result.bad_lines > 0 {
+                0
+            } else {
+                start + consumed as i64
+            },
             mtime_ms(&meta),
             now_ms()
         ],
@@ -577,6 +601,60 @@ mod tests {
             ("repo".into(), "/h/repo".into())
         );
         assert_eq!(project_of("C:\\Users\\r\\code\\app").0, "app");
+    }
+
+    #[test]
+    fn documento_json_completo_se_lee_y_relee() {
+        use crate::providers::gemini::Gemini;
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("tmp");
+        fs::create_dir_all(root.join("h").join("chats")).unwrap();
+        let file = root.join("h").join("chats").join("antigua.json");
+        let p = Gemini::with_roots(vec![root]);
+        let mut conn = db::open_in_memory().unwrap();
+        let msg = |id: &str, out: i64| {
+            format!(
+                r#"{{"id":"{id}","timestamp":"2026-09-24T11:00:05.000Z","type":"gemini","content":"ok","model":"gemini-2.5-pro","tokens":{{"input":100,"output":{out},"cached":0,"total":100}}}}"#
+            )
+        };
+        // Compacto y sin salto de línea final: antes la ingesta no entregaba nada.
+        let doc = format!(r#"{{"sessionId":"g-old","messages":[{}]}}"#, msg("m1", 10));
+        fs::write(&file, &doc).unwrap();
+        let r = ingest_file(&mut conn, &p, &file).unwrap();
+        assert_eq!((r.lines, r.bad_lines), (1, 0));
+        assert_eq!(count(&conn, "SELECT COUNT(*) FROM calls"), 1);
+        let again = ingest_file(&mut conn, &p, &file).unwrap();
+        assert_eq!(again.lines, 0, "sin cambios no se relee");
+        // Reescrito con un mensaje más (sigue sin salto final): se relee entero sin duplicar.
+        let doc2 = format!(
+            r#"{{"sessionId":"g-old","messages":[{},{}]}}"#,
+            msg("m1", 10),
+            msg("m2", 20)
+        );
+        fs::write(&file, &doc2).unwrap();
+        ingest_file(&mut conn, &p, &file).unwrap();
+        assert_eq!(count(&conn, "SELECT COUNT(*) FROM calls"), 2);
+        assert_eq!(count(&conn, "SELECT COUNT(*) FROM sessions"), 1);
+    }
+
+    #[test]
+    fn documento_json_formateado_en_varias_lineas() {
+        use crate::providers::gemini::Gemini;
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("tmp");
+        fs::create_dir_all(root.join("h").join("chats")).unwrap();
+        let file = root.join("h").join("chats").join("antigua.json");
+        let p = Gemini::with_roots(vec![root]);
+        let mut conn = db::open_in_memory().unwrap();
+        let doc = "{\n  \"sessionId\": \"g-old\",\n  \"messages\": [\n    {\"id\": \"m1\", \"timestamp\": \"2026-09-24T11:00:05.000Z\", \"type\": \"gemini\", \"content\": \"ok\", \"model\": \"gemini-2.5-pro\", \"tokens\": {\"input\": 100, \"output\": 10, \"cached\": 0, \"total\": 110}}\n  ]\n}\n";
+        fs::write(&file, doc).unwrap();
+        let r = ingest_file(&mut conn, &p, &file).unwrap();
+        assert_eq!(
+            (r.lines, r.bad_lines),
+            (1, 0),
+            "el documento se parsea entero"
+        );
+        assert_eq!(count(&conn, "SELECT COUNT(*) FROM calls"), 1);
     }
 
     #[test]
