@@ -75,19 +75,28 @@ export function Columns({
   color = "var(--accent)",
   format,
   axis = (ts: number) => new Date(ts).toLocaleDateString(LOCALES[getLang()], { day: "numeric", month: "short" }),
+  compare,
 }: {
   points: ColumnPoint[];
   height?: number;
   color?: string;
   format: (v: number) => string;
   axis?: (ts: number) => string;
+  /** Valores de otro periodo alineados con `points`, pintados como línea discontinua. */
+  compare?: number[];
 }) {
   const setTip = useTooltip();
   const [ref] = useWidth<HTMLDivElement>();
   if (!points.length) return <Empty />;
-  const max = Math.max(...points.map((p) => p.value), 1e-12);
+  const max = Math.max(...points.map((p) => p.value), ...(compare ?? []), 1e-12);
   const px = (v: number) => Math.round((v / max) * height);
   const n = points.length;
+  const line = compare?.length
+    ? compare
+        .slice(0, n)
+        .map((v, i) => `${(i + 0.5).toFixed(2)},${(height - (v / max) * height).toFixed(1)}`)
+        .join(" ")
+    : null;
   const mid = Math.floor(n / 2);
   const template = { gridTemplateColumns: `repeat(${n}, minmax(0, 1fr))` };
   return (
@@ -113,6 +122,11 @@ export function Columns({
             )}
           </div>
         ))}
+        {line && (
+          <svg className="columns-compare" viewBox={`0 0 ${n} ${height}`} preserveAspectRatio="none" aria-hidden>
+            <polyline points={line} />
+          </svg>
+        )}
       </div>
       <div className="columns-axis muted" style={template}>
         {points.map((p, i) => (

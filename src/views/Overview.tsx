@@ -4,6 +4,7 @@ import { PERIODS, projectMonth, type Period } from "../lib/period";
 import type { SectionId } from "../lib/sections";
 import type { DashboardData } from "../lib/useData";
 import { Kpis, type Kpi } from "../components/Kpis";
+import { ppDelta, relDelta } from "../lib/delta";
 import { Panel } from "../components/Panel";
 import { Columns, Legend, ShareBar } from "../components/Charts";
 import { AgentPanel, dayPoints, ModelPanel, ProjectPanel, startOfDay } from "./panels";
@@ -15,14 +16,15 @@ export function periodLabel(period: Period) {
 
 export function summaryKpis(data: DashboardData, budget: number | null): Kpi[] {
   const { summary: s } = data;
+  const p = data.prev?.summary;
   const monthSpent = data.month.reduce((a, p) => a + p.costUsd, 0);
   const projection = projectMonth(monthSpent);
   const budgetHint = budget != null ? t(" · presupuesto {b} ({p})", { b: fmt.usd(budget), p: fmt.pct(budget ? monthSpent / budget : 0) }) : "";
   return [
-    { label: t("Coste"), value: fmt.usd(s.costUsd), hint: t("{n} llamadas", { n: fmt.int(s.calls) }), tone: "accent" },
-    { label: t("Sesiones"), value: fmt.int(s.sessions), hint: s.sessions ? t("{v} por sesión", { v: fmt.usd(s.costUsd / s.sessions) }) : "" },
-    { label: t("Cache hit"), value: fmt.pct(s.cacheHit), hint: t("{r} leídos · {w} escritos", { r: fmt.compact(s.cacheRead), w: fmt.compact(s.cacheWrite) }) },
-    { label: t("Ahorro por caché"), value: fmt.usd(s.cacheSavingsUsd), hint: t("estimado: esa entrada a precio normal"), tone: "good" },
+    { label: t("Coste"), value: fmt.usd(s.costUsd), hint: t("{n} llamadas", { n: fmt.int(s.calls) }), tone: "accent", delta: p && relDelta(s.costUsd, p.costUsd, false) },
+    { label: t("Sesiones"), value: fmt.int(s.sessions), hint: s.sessions ? t("{v} por sesión", { v: fmt.usd(s.costUsd / s.sessions) }) : "", delta: p && relDelta(s.sessions, p.sessions, null) },
+    { label: t("Cache hit"), value: fmt.pct(s.cacheHit), hint: t("{r} leídos · {w} escritos", { r: fmt.compact(s.cacheRead), w: fmt.compact(s.cacheWrite) }), delta: p && p.calls > 0 && s.calls > 0 ? ppDelta(s.cacheHit, p.cacheHit, true) : null },
+    { label: t("Ahorro por caché"), value: fmt.usd(s.cacheSavingsUsd), hint: t("estimado: esa entrada a precio normal"), tone: "good", delta: p && relDelta(s.cacheSavingsUsd, p.cacheSavingsUsd, true) },
     { label: t("Burn rate"), value: `${fmt.usd(s.burnRateUsdH)}/h`, hint: t("últimos 60 minutos") },
     {
       label: t("Gasto del mes"),
@@ -54,7 +56,9 @@ export function DailyByAgent({ data, height = 210 }: { data: DashboardData; heig
   const legend = [...totals.entries()]
     .sort((a, b) => b[1].value - a[1].value)
     .map(([key, x]) => ({ label: `${x.label} · ${fmt.usd(x.value)}`, color: color(key) }));
-  const points = dayPoints(data.daily, data.filter).map((d) => {
+  // Periodo anterior alineado día a día (el día i del periodo con el día i del anterior).
+  const prev = data.prev ? dayPoints(data.prev.daily, data.prev.filter).map((d) => d.value) : undefined;
+  const points = dayPoints(data.daily, data.filter).map((d, i) => {
     const stack = (byDay.get(d.ts) ?? []).sort((a, b) => order.indexOf(a.key) - order.indexOf(b.key));
     const value = stack.reduce((a, x) => a + x.value, 0);
     return {
@@ -70,6 +74,7 @@ export function DailyByAgent({ data, height = 210 }: { data: DashboardData; heig
               {x.label}: {fmt.usd(x.value)}
             </div>
           ))}
+          {prev && prev[i] != null && <div className="muted">{t("Periodo anterior: {v}", { v: fmt.usd(prev[i]) })}</div>}
         </>
       ),
     };
@@ -77,7 +82,7 @@ export function DailyByAgent({ data, height = 210 }: { data: DashboardData; heig
   return (
     <div className="chart-box">
       <Legend items={legend} />
-      <Columns points={points} format={fmt.usd} height={height} />
+      <Columns points={points} format={fmt.usd} height={height} compare={prev} />
     </div>
   );
 }
@@ -131,7 +136,7 @@ export function Overview({
       <Kpis items={summaryKpis(data, budget)} />
       {over && <div className="notice warn">{t("⚠ La proyección del mes supera el presupuesto de {b}.", { b: fmt.usd(budget!) })}</div>}
       <div className="grid-top">
-        <Panel id="daily" title={t("Gasto diario")} question={t("por agente")} onOpen={() => open("daily")} openLabel={t("Daily Activity ›")}>
+        <Panel id="daily" title={t("Gasto diario")} question={data.prev ? t("por agente · línea discontinua = periodo anterior") : t("por agente")} onOpen={() => open("daily")} openLabel={t("Daily Activity ›")}>
           <DailyByAgent data={data} />
         </Panel>
         <Panel id="agent" title="By Agent" question={t("¿Qué agente uso más?")} onOpen={() => open("agent")}>

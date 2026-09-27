@@ -10,6 +10,7 @@ import { t } from "../lib/i18n";
 import { Bars, Columns, InlineBar, Legend, LineChart, Segmented, ShareBar } from "../components/Charts";
 import { DataTable, type Column } from "../components/DataTable";
 import { ChartTitle, Split } from "../components/Panel";
+import { relDelta } from "../lib/delta";
 
 /** Columna con la barra de reparto integrada en la fila (no repite etiqueta ni cifra). */
 export function barColumn<T>(header: string, rows: T[], value: (r: T) => number, color: string): Column<T> {
@@ -320,14 +321,31 @@ export function AgentPanel({ data, full }: PanelProps) {
 
 export function ProjectPanel({ data, full, singleProject }: PanelProps) {
   const rows = data.branches ?? data.projects;
+  const prevCost = data.prev ? new Map(data.prev.projects.map((r) => [r.key, r.costUsd])) : null;
   // En la vista general caben nombre, coste y sesiones; la ampliada añade media y overhead.
   const columns: Column<BreakdownRow>[] = [
     { header: t(singleProject ? "Rama" : "Proyecto"), cell: (r) => r.label },
     { header: t("Coste"), cell: (r) => cost(r.costUsd), align: "right", width: "68px", className: "cost" },
     ...(full ? [{ header: t("$/sesión"), cell: (r: BreakdownRow) => cost(r.sessions ? r.costUsd / r.sessions : 0), align: "right" as const, width: "68px" }] : []),
     { header: t("Ses"), cell: (r) => fmt.int(r.sessions), align: "right", width: "40px", className: "secondary" },
+    // Vista general con comparación: variación de coste frente al periodo anterior.
+    ...(!full && prevCost
+      ? [
+          {
+            header: t("vs. ant."),
+            cell: (r: BreakdownRow) => {
+              const d = relDelta(r.costUsd, prevCost.get(r.key) ?? 0, false);
+              return d ? t(d.text) : "–";
+            },
+            align: "right" as const,
+            width: "60px",
+            className: (r: BreakdownRow) => `num ${relDelta(r.costUsd, prevCost.get(r.key) ?? 0, false)?.tone ?? "muted"}`,
+          },
+        ]
+      : []),
     ...(full ? [{ header: t("Overhead"), cell: (r: BreakdownRow) => (r.overheadTokens ? fmt.compact(r.overheadTokens) : "–"), align: "right" as const, width: "70px", className: "accent" }] : []),
-    barColumn(t("Reparto del coste"), rows, (r) => r.costUsd, "var(--series-blue)"),
+    // En la tarjeta de la portada con comparación no cabe también la barra.
+    ...(full || !prevCost ? [barColumn(t("Reparto del coste"), rows, (r) => r.costUsd, "var(--series-blue)")] : []),
   ];
   return <DataTable rows={rows} rowKey={(r) => r.key} columns={columns} limit={full ? undefined : PREVIEW} />;
 }
