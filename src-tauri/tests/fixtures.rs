@@ -457,6 +457,15 @@ fn gemini_fixture() {
     assert_eq!((i1.as_str(), i2.as_str()), ("debug", "brainstorm"));
     let name: String = conn.query_row("SELECT p.name FROM sessions s JOIN projects p ON p.id = s.project_id WHERE s.is_subagent = 0", [], |r| r.get(0)).unwrap();
     assert_eq!(name, "demo", "la carpeta llega por $set.directories");
+    // `invoke_agent` lanza el subagente: su tipo es `agent_name` y `agentId` enlaza el hilo.
+    let types = agentboard_lib::insights::agent_types(&conn, &f).unwrap();
+    assert_eq!(
+        types
+            .iter()
+            .map(|r| (r.label.as_str(), r.calls))
+            .collect::<Vec<_>>(),
+        vec![("codebase_investigator", 1)]
+    );
     conn.execute("DELETE FROM file_state", []).unwrap();
     ingest::scan_all(&mut conn, &providers).unwrap();
     assert_eq!(queries::summary(&conn, &f, 0).unwrap().calls, 4);

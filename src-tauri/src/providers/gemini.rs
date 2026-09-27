@@ -155,8 +155,9 @@ impl Gemini {
                         .map(|s| s.chars().take(500).collect::<String>());
                         let detail = match tool.as_str() {
                             "Agent" => Some(
-                                args["subagent_type"]
+                                args["agent_name"]
                                     .as_str()
+                                    .or(args["subagent_type"].as_str())
                                     .or(args["agent"].as_str())
                                     .or(args["name"].as_str())
                                     .unwrap_or("general-purpose")
@@ -226,7 +227,7 @@ fn canonical_tool(name: &str) -> &str {
         "web_fetch" => "WebFetch",
         "google_web_search" | "web_search" => "WebSearch",
         "write_todos" | "save_memory" => "TodoWrite",
-        "delegate_to_agent" | "subagent" | "task" => "Agent",
+        "invoke_agent" | "delegate_to_agent" | "subagent" | "task" => "Agent",
         "activate_skill" | "skill" => "Skill",
         "ask_user" => "AskUserQuestion",
         other => other,
