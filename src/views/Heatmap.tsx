@@ -7,6 +7,12 @@ import { Kpis, type Kpi } from "../components/Kpis";
 import { useTooltip } from "../components/Tooltip";
 import { periodLabel } from "./Overview";
 
+/** Nivel de intensidad 0–5 de una celda (0 = sin gasto), como el gráfico de contribuciones de GitHub. */
+export function level(v: number, max: number): number {
+  if (!(v > 0) || !(max > 0)) return 0;
+  return Math.min(5, Math.max(1, Math.ceil((v / max) * 5)));
+}
+
 /** Días de lunes (0) a domingo (6). */
 export const weekday = (ts: number) => (new Date(ts).getDay() + 6) % 7;
 
@@ -37,7 +43,8 @@ export function Heatmap({ data, period }: { data: DashboardData; period: Period 
   const topDay = byDay.indexOf(Math.max(...byDay));
   const workHours = byHour.slice(9, 19).reduce((a, b) => a + b, 0);
   const weekend = byDay[5] + byDay[6];
-  const alpha = (v: number) => (max > 0 && v > 0 ? 0.15 + 0.85 * (v / max) : 0);
+  const maxDay = Math.max(...byDay, 0);
+  const maxHour = Math.max(...byHour, 0);
 
   const kpis: Kpi[] = [
     { label: t("Franja de más gasto"), value: max ? `${dayName(peak.day, "short")} · ${String(peak.hour).padStart(2, "0")}:00` : "–", hint: max ? fmt.usd(peak.cost) : "", tone: "accent" },
@@ -62,51 +69,66 @@ export function Heatmap({ data, period }: { data: DashboardData; period: Period 
           </div>
           <div className="heatmap-scale" aria-hidden>
             {t("menos")}
-            {[0.15, 0.4, 0.7, 1].map((a) => (
-              <i key={a} style={{ background: `color-mix(in srgb, var(--accent) ${a * 100}%, var(--track))` }} />
+            {[0, 1, 2, 3, 4, 5].map((l) => (
+              <i key={l} className={`heat-l${l}`} />
             ))}
             {t("más")}
           </div>
         </header>
-        <div className="heatmap" role="table" aria-label={t("Coste por día y hora")}>
-          <span />
-          {Array.from({ length: 24 }, (_, h) => (
-            <span key={h} className="heatmap-hour">
-              {h % 3 === 0 ? String(h).padStart(2, "0") : ""}
-            </span>
-          ))}
-          {grid.map((row, d) => (
-            <div key={d} role="row" style={{ display: "contents" }}>
-              <span className="heatmap-day" role="rowheader">
-                {dayName(d, "short")}
+        <div className="heatmap-wrap">
+          <div className="heatmap" role="table" aria-label={t("Coste por día y hora")}>
+            <span />
+            {Array.from({ length: 24 }, (_, h) => (
+              <span key={h} className="heatmap-hour">
+                {h % 6 === 0 ? `${String(h).padStart(2, "0")}h` : ""}
               </span>
-              {row.map((c, h) => (
-                <span
-                  key={h}
-                  role="cell"
-                  className={`heatmap-cell ${max && d === peak.day && h === peak.hour ? "peak" : ""}`}
-                  style={alpha(c.cost) ? { background: `color-mix(in srgb, var(--accent) ${Math.round(alpha(c.cost) * 100)}%, var(--track))` } : undefined}
-                  aria-label={`${dayName(d, "long")} ${h}:00 · ${fmt.usd(c.cost)}`}
-                  onMouseMove={(e) =>
-                    setTip({
-                      x: e.clientX,
-                      y: e.clientY,
-                      content: (
-                        <>
-                          <b>
-                            {dayName(d, "long")} · {String(h).padStart(2, "0")}:00
-                          </b>
-                          <div>{fmt.usd(c.cost)}</div>
-                          <div className="muted">{t("{n} llamadas", { n: fmt.int(c.calls) })}</div>
-                        </>
-                      ),
-                    })
-                  }
-                  onMouseLeave={() => setTip(null)}
-                />
-              ))}
-            </div>
-          ))}
+            ))}
+            <span className="heatmap-total-head">{t("Total")}</span>
+            {grid.map((row, d) => (
+              <div key={d} role="row" style={{ display: "contents" }}>
+                <span className="heatmap-day" role="rowheader">
+                  {dayName(d, "short")}
+                </span>
+                {row.map((c, h) => (
+                  <span
+                    key={h}
+                    role="cell"
+                    className={`heatmap-cell heat-l${level(c.cost, max)} ${max && d === peak.day && h === peak.hour ? "peak" : ""}`}
+                    aria-label={`${dayName(d, "long")} ${h}:00 · ${fmt.usd(c.cost)}`}
+                    onMouseMove={(e) =>
+                      setTip({
+                        x: e.clientX,
+                        y: e.clientY,
+                        content: (
+                          <>
+                            <b>
+                              {dayName(d, "long")} · {String(h).padStart(2, "0")}:00
+                            </b>
+                            <div>{fmt.usd(c.cost)}</div>
+                            <div className="muted">{t("{n} llamadas", { n: fmt.int(c.calls) })}</div>
+                          </>
+                        ),
+                      })
+                    }
+                    onMouseLeave={() => setTip(null)}
+                  />
+                ))}
+                <span className="heatmap-total" title={fmt.usd(byDay[d])}>
+                  <span className="inline-bar">
+                    <span className="inline-bar-fill" style={{ width: `${maxDay ? (byDay[d] / maxDay) * 100 : 0}%`, background: "var(--accent)" }} />
+                  </span>
+                  <span className="num">{fmt.usd(byDay[d])}</span>
+                </span>
+              </div>
+            ))}
+            <span className="heatmap-day">{t("Total")}</span>
+            {byHour.map((v, h) => (
+              <span key={h} className="heatmap-hourbar" title={`${String(h).padStart(2, "0")}:00 · ${fmt.usd(v)}`}>
+                <i style={{ height: `${maxHour ? Math.max(v > 0 ? 8 : 0, (v / maxHour) * 100) : 0}%` }} />
+              </span>
+            ))}
+            <span />
+          </div>
         </div>
       </section>
     </div>

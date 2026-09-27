@@ -67,3 +67,11 @@ describe("tickFormat", () => {
     expect([500, 15000].map(n)).toEqual(["500", "15K"]);
   });
 });
+
+import { level } from "../Heatmap";
+describe("level", () => {
+  it("5 niveles de intensidad y 0 sin gasto", () => {
+    expect([0, 0.5, 2, 5, 8, 10].map((v) => level(v, 10))).toEqual([0, 1, 1, 3, 4, 5]);
+    expect(level(3, 0)).toBe(0);
+  });
+});
