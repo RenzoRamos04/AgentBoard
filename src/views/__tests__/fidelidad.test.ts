@@ -56,3 +56,14 @@ describe("niceStep", () => {
     expect(niceStep(0)).toBe(1);
   });
 });
+
+import { tickFormat } from "../../components/Charts";
+import { fmt as f2 } from "../../lib/format";
+describe("tickFormat", () => {
+  it("marcas cortas para importes y cantidades grandes", () => {
+    const usd = tickFormat(f2.usd);
+    expect([0, 2.5, 250, 1500, 15000].map(usd)).toEqual(["$0", "$2.50", "$250", "$1.5K", "$15K"]);
+    const n = tickFormat(f2.int);
+    expect([500, 15000].map(n)).toEqual(["500", "15K"]);
+  });
+});

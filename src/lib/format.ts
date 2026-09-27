@@ -11,6 +11,9 @@ export const fmt = {
   usd: (n: number) => (n !== 0 && Math.abs(n) < 0.01 ? usd4 : usd2).format(n),
   int: (n: number) => int.format(n),
   compact: (n: number) => compact.format(n),
+  /** Importe corto para las marcas de un eje: «$250», «$2.50», «$1.5K», «$15K». */
+  usdAxis: (n: number) =>
+    n >= 1000 ? `$${compact.format(n)}` : Number.isInteger(n) ? `$${n}` : `$${n.toFixed(2)}`,
   pct: (n: number) => pct.format(n),
   date: (ts: number) => new Date(ts).toLocaleDateString(locale(), { day: "numeric", month: "short", year: "numeric" }),
   dateTime: (ts: number) =>

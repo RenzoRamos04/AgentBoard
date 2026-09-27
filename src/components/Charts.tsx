@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Empty } from "./Panel";
 import { useTooltip } from "./Tooltip";
 import { getLang, LOCALES, t } from "../lib/i18n";
+import { fmt } from "../lib/format";
 
 export interface BarItem {
   key: string;
@@ -68,6 +69,14 @@ function useWidth<T extends HTMLElement>() {
   return [ref, w] as const;
 }
 
+/**
+ * Formato de las marcas de un eje: cortas para que quepan en su margen. Los importes pasan a
+ * «$250» / «$1.5K» y las cantidades a «1.5K»; `format` completo sigue en tooltips y en «máx.».
+ */
+export function tickFormat(format: (v: number) => string): (v: number) => string {
+  return format(1234.5).includes("$") ? fmt.usdAxis : (v: number) => (v >= 1000 ? fmt.compact(v) : format(v));
+}
+
 /** Paso «redondo» (1, 2, 2.5, 5 × 10ⁿ) mayor o igual que `raw`, para las marcas de un eje. */
 export function niceStep(raw: number): number {
   if (!(raw > 0)) return 1;
@@ -102,6 +111,7 @@ export function Columns({
   const rawMax = Math.max(...points.map((p) => p.value), ...(compare ?? []), 1e-12);
   // Con eje, la escala llega a un múltiplo «redondo» para que las marcas sean legibles.
   const step = yAxis ? niceStep(rawMax / 3) : 0;
+  const tick = tickFormat(format);
   const max = yAxis ? Math.max(step * Math.ceil(rawMax / step), 1e-12) : rawMax;
   const px = (v: number) => Math.round((v / max) * height);
   const n = points.length;
@@ -122,7 +132,7 @@ export function Columns({
         <div className="columns-y-axis muted num" style={{ height }} aria-hidden>
           {Array.from({ length: Math.round(max / step) + 1 }, (_, i) => i * step).map((v) => (
             <span key={v} style={{ top: `${(1 - v / max) * 100}%` }}>
-              {format(v)}
+              {tick(v)}
             </span>
           ))}
         </div>
@@ -193,6 +203,7 @@ export function LineChart({
   const w = Math.max(width, 100);
   const rawMax = Math.max(...points.map((p) => p.value), 1e-12);
   const step = niceStep(rawMax / 3);
+  const tick = tickFormat(format);
   const max = Math.max(step * Math.ceil(rawMax / step), 1e-12);
   const ticks = Array.from({ length: Math.round(max / step) + 1 }, (_, i) => i * step);
   const iw = w - pad.left - pad.right;
@@ -217,7 +228,7 @@ export function LineChart({
           <g key={v}>
             {v > 0 && <line className="grid" x1={pad.left} x2={pad.left + iw} y1={y(v)} y2={y(v)} />}
             <text className="axis-label" x={pad.left - 8} y={y(v)} textAnchor="end" dominantBaseline="middle">
-              {format(v)}
+              {tick(v)}
             </text>
           </g>
         ))}
