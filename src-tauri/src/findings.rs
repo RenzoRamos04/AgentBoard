@@ -298,10 +298,17 @@ fn unpriced(conn: &Connection, f: &Filter, s: &queries::Summary) -> Result<Optio
         "unpriced_models",
         "warn",
         json!({ "n": n, "models": s.unpriced_models.join(", "), "calls": calls }),
-        format!(
-            "{n} modelos sin precio ({}): {calls} llamadas cuentan como $0.",
-            s.unpriced_models.join(", ")
-        ),
+        if n == 1 {
+            format!(
+                "1 modelo sin precio ({}): {calls} llamadas cuentan como $0.",
+                s.unpriced_models[0]
+            )
+        } else {
+            format!(
+                "{n} modelos sin precio ({}): {calls} llamadas cuentan como $0.",
+                s.unpriced_models.join(", ")
+            )
+        },
     )))
 }
 
@@ -380,9 +387,17 @@ fn top_session(conn: &Connection, f: &Filter, s: &queries::Summary) -> Result<Op
 }
 
 fn shell_command_errors(conn: &Connection, f: &Filter) -> Result<Option<Finding>> {
+    // En una línea compuesta no se sabe qué comando falló: los auxiliares (echo, cd, grep…)
+    // heredan el error de los demás, así que no se señalan.
+    const HELPERS: &[&str] = &[
+        "echo", "printf", "cd", "ls", "cat", "head", "tail", "grep", "rg", "wc", "sort", "uniq",
+        "true", "false", "sleep", "tr", "cut", "awk", "sed", "xargs", "tee", "test", "[", "pwd",
+        "which", "export", "set",
+    ];
     let rows = shell_commands(conn, f)?;
     let Some(c) = rows
         .iter()
+        .filter(|c| !HELPERS.contains(&c.key.as_str()))
         .filter(|c| c.errors >= 5 && c.errors as f64 / c.calls as f64 >= 0.05)
         .max_by_key(|c| c.errors)
     else {
@@ -611,11 +626,15 @@ fn unused_agents(conn: &Connection, f: &Filter) -> Result<Option<Finding>> {
         "unused_agents",
         "info",
         json!({ "n": idle.len(), "agents": idle.join(", ") }),
-        format!(
-            "{} agentes instalados sin uso en el periodo: {}.",
-            idle.len(),
-            idle.join(", ")
-        ),
+        if idle.len() == 1 {
+            format!("{} está instalado pero sin uso en el periodo.", idle[0])
+        } else {
+            format!(
+                "{} agentes instalados sin uso en el periodo: {}.",
+                idle.len(),
+                idle.join(", ")
+            )
+        },
     )))
 }
 
