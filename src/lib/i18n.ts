@@ -504,6 +504,8 @@ const en: Dict = {
   "{times}× lo que gastaste ({cost}): el contexto reutilizado sale casi gratis.": "{times}× what you spent ({cost}): reused context is nearly free.",
   "{times}× tu media por hora activa ({avg}/h).": "{times}× your average per active hour ({avg}/h).",
   "Va bien": "Going well",
+  "Por día de la semana": "By day of the week",
+  "coste del periodo": "cost for the period",
 };
 
 const pt: Dict = {
@@ -969,6 +971,8 @@ const pt: Dict = {
   "{times}× lo que gastaste ({cost}): el contexto reutilizado sale casi gratis.": "{times}× o que você gastou ({cost}): o contexto reutilizado sai quase de graça.",
   "{times}× tu media por hora activa ({avg}/h).": "{times}× sua média por hora ativa ({avg}/h).",
   "Va bien": "Vai bem",
+  "Por día de la semana": "Por dia da semana",
+  "coste del periodo": "custo do período",
 };
 
 const fr: Dict = {
@@ -1434,6 +1438,8 @@ const fr: Dict = {
   "{times}× lo que gastaste ({cost}): el contexto reutilizado sale casi gratis.": "{times}× ce que vous avez dépensé ({cost}) : le contexte réutilisé est presque gratuit.",
   "{times}× tu media por hora activa ({avg}/h).": "{times}× votre moyenne par heure active ({avg}/h).",
   "Va bien": "Ça va bien",
+  "Por día de la semana": "Par jour de la semaine",
+  "coste del periodo": "coût de la période",
 };
 
 const DICTS: Record<Lang, Dict> = { es: {}, en, pt, fr };

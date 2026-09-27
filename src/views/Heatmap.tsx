@@ -4,6 +4,7 @@ import { getLang, LOCALES, t } from "../lib/i18n";
 import type { Period } from "../lib/period";
 import type { DashboardData } from "../lib/useData";
 import { Kpis, type Kpi } from "../components/Kpis";
+import { Bars, Columns } from "../components/Charts";
 import { useTooltip } from "../components/Tooltip";
 import { periodLabel } from "./Overview";
 
@@ -43,8 +44,6 @@ export function Heatmap({ data, period }: { data: DashboardData; period: Period 
   const topDay = byDay.indexOf(Math.max(...byDay));
   const workHours = byHour.slice(9, 19).reduce((a, b) => a + b, 0);
   const weekend = byDay[5] + byDay[6];
-  const maxDay = Math.max(...byDay, 0);
-  const maxHour = Math.max(...byHour, 0);
 
   const kpis: Kpi[] = [
     { label: t("Franja de más gasto"), value: max ? `${dayName(peak.day, "short")} · ${String(peak.hour).padStart(2, "0")}:00` : "–", hint: max ? fmt.usd(peak.cost) : "", tone: "accent" },
@@ -67,23 +66,15 @@ export function Heatmap({ data, period }: { data: DashboardData; period: Period 
             <h2>{t("Coste por día y hora")}</h2>
             <span className="muted">{t("hora local · cuanto más intenso, más gasto")}</span>
           </div>
-          <div className="heatmap-scale" aria-hidden>
-            {t("menos")}
-            {[0, 1, 2, 3, 4, 5].map((l) => (
-              <i key={l} className={`heat-l${l}`} />
-            ))}
-            {t("más")}
-          </div>
         </header>
         <div className="heatmap-wrap">
           <div className="heatmap" role="table" aria-label={t("Coste por día y hora")}>
             <span />
             {Array.from({ length: 24 }, (_, h) => (
               <span key={h} className="heatmap-hour">
-                {h % 6 === 0 ? `${String(h).padStart(2, "0")}h` : ""}
+                {h % 3 === 0 ? String(h).padStart(2, "0") : ""}
               </span>
             ))}
-            <span className="heatmap-total-head">{t("Total")}</span>
             {grid.map((row, d) => (
               <div key={d} role="row" style={{ display: "contents" }}>
                 <span className="heatmap-day" role="rowheader">
@@ -113,24 +104,42 @@ export function Heatmap({ data, period }: { data: DashboardData; period: Period 
                     onMouseLeave={() => setTip(null)}
                   />
                 ))}
-                <span className="heatmap-total" title={fmt.usd(byDay[d])}>
-                  <span className="inline-bar">
-                    <span className="inline-bar-fill" style={{ width: `${maxDay ? (byDay[d] / maxDay) * 100 : 0}%`, background: "var(--accent)" }} />
-                  </span>
-                  <span className="num">{fmt.usd(byDay[d])}</span>
-                </span>
               </div>
             ))}
-            <span className="heatmap-day">{t("Total")}</span>
-            {byHour.map((v, h) => (
-              <span key={h} className="heatmap-hourbar" title={`${String(h).padStart(2, "0")}:00 · ${fmt.usd(v)}`}>
-                <i style={{ height: `${maxHour ? Math.max(v > 0 ? 8 : 0, (v / maxHour) * 100) : 0}%` }} />
-              </span>
+          </div>
+          <div className="heatmap-scale" aria-hidden>
+            {t("menos")}
+            {[0, 1, 2, 3, 4, 5].map((l) => (
+              <i key={l} className={`heat-l${l}`} />
             ))}
-            <span />
+            {t("más")}
           </div>
         </div>
       </section>
+      <div className="grid-2">
+        <section className="panel">
+          <header className="panel-head">
+            <div className="panel-title">
+              <h2>{t("Por día de la semana")}</h2>
+              <span className="muted">{t("coste del periodo")}</span>
+            </div>
+          </header>
+          <Bars
+            items={byDay.map((v, d) => ({ key: String(d), label: dayName(d, "long"), value: v, valueLabel: fmt.usd(v), color: d === topDay && v > 0 ? "var(--accent)" : "var(--series-blue)" }))}
+            labelWidth={84}
+            thick
+          />
+        </section>
+        <section className="panel">
+          <header className="panel-head">
+            <div className="panel-title">
+              <h2>{t("Por hora del día")}</h2>
+              <span className="muted">{t("coste del periodo")}</span>
+            </div>
+          </header>
+          <Columns points={byHour.map((v, h) => ({ ts: h, value: v }))} format={fmt.usd} height={148} color="var(--accent)" axis={(h) => `${String(h).padStart(2, "0")}h`} />
+        </section>
+      </div>
     </div>
   );
 }
