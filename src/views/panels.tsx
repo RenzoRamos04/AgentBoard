@@ -420,8 +420,13 @@ export function ModelPanel({ data, full }: PanelProps) {
     { header: t("Coste"), cell: (r) => cost(r.costUsd), align: "right", width: "68px", className: "cost" },
     ...(full ? [{ header: t("Cache hit"), cell: (r: BreakdownRow) => (r.cacheHit ? fmt.pct(r.cacheHit) : "–"), align: "right" as const, width: "56px", className: "secondary" }] : []),
     { header: t("Llamadas"), cell: (r) => fmt.int(r.calls), align: "right", width: "60px" },
-    { header: "1-shot", cell: (r) => shot(oneShot.get(r.key)), align: "right", width: "56px", className: (r) => shotClass(oneShot.get(r.key)) },
-    barColumn(t("Reparto del coste"), rows, (r) => r.costUsd, "var(--series-violet)"),
+    // En la vista general (tarjeta estrecha) basta con nombre, coste, llamadas y caché.
+    ...(full
+      ? [
+          { header: "1-shot", cell: (r: BreakdownRow) => shot(oneShot.get(r.key)), align: "right" as const, width: "56px", className: (r: BreakdownRow) => shotClass(oneShot.get(r.key)) },
+          barColumn(t("Reparto del coste"), rows, (r) => r.costUsd, "var(--series-violet)"),
+        ]
+      : [{ header: t("Caché"), cell: (r: BreakdownRow) => (r.cacheHit ? fmt.pct(r.cacheHit) : "–"), align: "right" as const, width: "52px", className: "secondary" }]),
   ];
   return <DataTable rows={rows} rowKey={(r) => r.key} columns={columns} limit={full ? undefined : PREVIEW} />;
 }

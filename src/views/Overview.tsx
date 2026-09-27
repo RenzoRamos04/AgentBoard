@@ -1,25 +1,13 @@
-import type { ReactElement } from "react";
 import { t } from "../lib/i18n";
-import { fmt } from "../lib/format";
+import { activityColor, activityLabel, agentColor, fmt } from "../lib/format";
 import { PERIODS, projectMonth, type Period } from "../lib/period";
-import { SECTIONS, type SectionId } from "../lib/sections";
+import type { SectionId } from "../lib/sections";
 import type { DashboardData } from "../lib/useData";
 import { Kpis, type Kpi } from "../components/Kpis";
 import { Panel } from "../components/Panel";
-import { ActivityPanel, AgentPanel, AgentTypesPanel, DailyPanel, McpPanel, ModelPanel, ProjectPanel, ShellPanel, SkillsPanel, ToolsPanel, type PanelProps } from "./panels";
+import { Columns, Legend, ShareBar } from "../components/Charts";
+import { AgentPanel, dayPoints, ModelPanel, ProjectPanel, startOfDay } from "./panels";
 
-export const PANELS: Record<Exclude<SectionId, "overview">, (p: PanelProps) => ReactElement> = {
-  daily: DailyPanel,
-  agent: AgentPanel,
-  project: ProjectPanel,
-  activity: ActivityPanel,
-  model: ModelPanel,
-  tools: ToolsPanel,
-  shell: ShellPanel,
-  skills: SkillsPanel,
-  mcp: McpPanel,
-  agents: AgentTypesPanel,
-};
 
 export function periodLabel(period: Period) {
   return t(PERIODS.find((p) => p.kind === period.kind)?.label ?? "").toLowerCase();
@@ -45,6 +33,74 @@ export function summaryKpis(data: DashboardData, budget: number | null): Kpi[] {
   ];
 }
 
+/** Coste por día apilado por agente, con los días sin actividad a cero. */
+export function DailyByAgent({ data, height = 210 }: { data: DashboardData; height?: number }) {
+  const order = data.agents.map((a) => a.key);
+  const color = (key: string) => agentColor(key, Math.max(order.indexOf(key), 0));
+  const byDay = new Map<number, { key: string; label: string; value: number; color: string }[]>();
+  for (const s of data.dailyByAgent) {
+    const day = startOfDay(s.ts);
+    const list = byDay.get(day) ?? [];
+    list.push({ key: s.key, label: s.label, value: s.costUsd, color: color(s.key) });
+    byDay.set(day, list);
+  }
+  // Leyenda: los agentes que aparecen en el gráfico, con su total del periodo.
+  const totals = new Map<string, { label: string; value: number }>();
+  for (const s of data.dailyByAgent) {
+    const cur = totals.get(s.key) ?? { label: s.label, value: 0 };
+    cur.value += s.costUsd;
+    totals.set(s.key, cur);
+  }
+  const legend = [...totals.entries()]
+    .sort((a, b) => b[1].value - a[1].value)
+    .map(([key, x]) => ({ label: `${x.label} · ${fmt.usd(x.value)}`, color: color(key) }));
+  const points = dayPoints(data.daily, data.filter).map((d) => {
+    const stack = (byDay.get(d.ts) ?? []).sort((a, b) => order.indexOf(a.key) - order.indexOf(b.key));
+    const value = stack.reduce((a, x) => a + x.value, 0);
+    return {
+      ts: d.ts,
+      value,
+      stack,
+      tooltip: (
+        <>
+          <b>{fmt.date(d.ts)}</b>
+          <div>{fmt.usd(value)}</div>
+          {stack.map((x) => (
+            <div key={x.key} className="muted">
+              {x.label}: {fmt.usd(x.value)}
+            </div>
+          ))}
+        </>
+      ),
+    };
+  });
+  return (
+    <div className="chart-box">
+      <Legend items={legend} />
+      <Columns points={points} format={fmt.usd} height={height} />
+    </div>
+  );
+}
+
+/** Reparto del coste por actividad, en barra al 100 %. */
+function ActivityShare({ data }: { data: DashboardData }) {
+  const rows = data.activity.activities;
+  const segments = rows.map((r) => ({ key: r.key, label: activityLabel(r.key), value: r.costUsd, color: activityColor(r.key) }));
+  const edits = rows.reduce((a, r) => a + r.editTurns, 0);
+  const ok = rows.reduce((a, r) => a + (r.oneShot ?? 0) * r.editTurns, 0);
+  return (
+    <>
+      <ShareBar segments={segments} format={fmt.usd} limit={8} compact />
+      {edits > 0 && (
+        <div className="panel-note">
+          <span>{t("1-shot global")}</span>
+          <span className={`num ${ok / edits >= 0.95 ? "good" : ""}`}>{fmt.pct(ok / edits)}</span>
+        </div>
+      )}
+    </>
+  );
+}
+
 export function Overview({
   data,
   period,
@@ -61,6 +117,7 @@ export function Overview({
   const scope = singleProject ? t("proyecto {name}", { name: singleProject }) : t("todos los agentes y proyectos");
   const monthSpent = data.month.reduce((a, p) => a + p.costUsd, 0);
   const over = budget != null && projectMonth(monthSpent) > budget;
+  const props = { data, full: false, singleProject };
   return (
     <div className="main">
       <header className="page-head">
@@ -74,23 +131,23 @@ export function Overview({
       <Kpis items={summaryKpis(data, budget)} />
       {over && <div className="notice warn">{t("⚠ La proyección del mes supera el presupuesto de {b}.", { b: fmt.usd(budget!) })}</div>}
       <div className="grid-top">
-        <Panel id="daily" title="Daily Activity" question={t("¿Cuánto gasto cada día?")} onOpen={() => open("daily")}>
-          <DailyPanel data={data} full={false} singleProject={singleProject} />
+        <Panel id="daily" title={t("Gasto diario")} question={t("por agente")} onOpen={() => open("daily")} openLabel={t("Daily Activity ›")}>
+          <DailyByAgent data={data} />
         </Panel>
         <Panel id="agent" title="By Agent" question={t("¿Qué agente uso más?")} onOpen={() => open("agent")}>
-          <AgentPanel data={data} full={false} singleProject={singleProject} />
+          <AgentPanel {...props} />
         </Panel>
       </div>
-      <div className="grid-2">
-        {SECTIONS.filter((s) => !["overview", "daily", "agent"].includes(s.id)).map((s) => {
-          const Body = PANELS[s.id as Exclude<SectionId, "overview">];
-          const title = s.id === "project" && singleProject ? t("By Branch · {name}", { name: singleProject }) : t(s.title);
-          return (
-            <Panel key={s.id} id={s.id} title={title} question={t(s.question)} onOpen={() => open(s.id)}>
-              <Body data={data} full={false} singleProject={singleProject} />
-            </Panel>
-          );
-        })}
+      <div className="grid-3">
+        <Panel id="project" title={singleProject ? t("Top ramas") : t("Top proyectos")} onOpen={() => open("project")} openLabel={t("By Project ›")}>
+          <ProjectPanel {...props} />
+        </Panel>
+        <Panel id="model" title={t("Top modelos")} onOpen={() => open("model")} openLabel={t("By Model ›")}>
+          <ModelPanel {...props} />
+        </Panel>
+        <Panel id="activity" title={t("En qué se va el gasto")} onOpen={() => open("activity")} openLabel={t("By Activity ›")}>
+          <ActivityShare data={data} />
+        </Panel>
       </div>
     </div>
   );
