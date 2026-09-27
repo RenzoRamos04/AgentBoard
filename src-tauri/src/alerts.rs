@@ -23,13 +23,31 @@ pub struct Check {
     pub limit: f64,
 }
 
+/// Qué umbrales avisar (preferencias de Ajustes).
+#[derive(Debug, Clone, Copy)]
+pub struct Thresholds {
+    pub at_80: bool,
+    pub at_100: bool,
+}
+
+impl Thresholds {
+    pub const ALL: Self = Self {
+        at_80: true,
+        at_100: true,
+    };
+}
+
 /// Avisos (título, texto) pendientes; marca en `notified` los umbrales avisados.
-pub fn pending(checks: &[Check], notified: &mut HashSet<String>) -> Vec<(String, String)> {
+pub fn pending(
+    checks: &[Check],
+    notified: &mut HashSet<String>,
+    th: Thresholds,
+) -> Vec<(String, String)> {
     let mut out = Vec::new();
     for c in checks.iter().filter(|c| c.limit > 0.0) {
         let ratio = c.value / c.limit;
         let (k80, k100) = (format!("{}:80", c.id), format!("{}:100", c.id));
-        if ratio >= 1.0 && !notified.contains(&k100) {
+        if ratio >= 1.0 && th.at_100 && !notified.contains(&k100) {
             out.push((
                 "Presupuesto superado".to_string(),
                 format!(
@@ -39,7 +57,7 @@ pub fn pending(checks: &[Check], notified: &mut HashSet<String>) -> Vec<(String,
             ));
             notified.insert(k100);
             notified.insert(k80);
-        } else if ratio >= 0.8 && !notified.contains(&k80) {
+        } else if ratio >= 0.8 && th.at_80 && !notified.contains(&k80) {
             out.push((
                 "Cerca del presupuesto".to_string(),
                 format!(
@@ -67,6 +85,20 @@ fn today_start() -> i64 {
         .unwrap_or(0)
 }
 
+/// Gasto del día local en curso, de todos los agentes y proyectos.
+pub fn today_spent(conn: &Connection) -> Result<f64> {
+    let today = queries::Filter {
+        from: Some(today_start()),
+        ..Default::default()
+    };
+    let (w, args) = today.sql("c.ts");
+    Ok(conn.query_row(
+        &format!("SELECT COALESCE(SUM(c.cost_usd),0) FROM call_costs c JOIN sessions s ON s.id = c.session_id WHERE {w}"),
+        params_from_iter(args.iter()),
+        |r| r.get(0),
+    )?)
+}
+
 /// Comprobaciones de todos los presupuestos de los ajustes.
 pub fn checks(conn: &Connection, s: &settings::Settings) -> Result<Vec<Check>> {
     let mut out = Vec::new();
@@ -81,16 +113,7 @@ pub fn checks(conn: &Connection, s: &settings::Settings) -> Result<Vec<Check>> {
         });
     }
     if let Some(b) = s.daily_budget {
-        let today = queries::Filter {
-            from: Some(today_start()),
-            ..Default::default()
-        };
-        let (w, args) = today.sql("c.ts");
-        let spent: f64 = conn.query_row(
-            &format!("SELECT COALESCE(SUM(c.cost_usd),0) FROM call_costs c JOIN sessions s ON s.id = c.session_id WHERE {w}"),
-            params_from_iter(args.iter()),
-            |r| r.get(0),
-        )?;
+        let spent = today_spent(conn)?;
         out.push(Check {
             id: "day".into(),
             name: "tu presupuesto diario".into(),
@@ -143,22 +166,32 @@ impl Alerts {
     /// Recalcula tras un escaneo: refresca la bandeja y lanza los avisos de presupuesto pendientes.
     pub fn refresh(&self, app: &tauri::AppHandle, db: &Arc<Mutex<Connection>>, tray: &TrayIcon) {
         let s = settings::load();
-        let (month, checks) = match db.lock() {
+        let (month, today, checks) = match db.lock() {
             Ok(conn) => (
                 queries::month_progress(&conn, &queries::Filter::default()).unwrap_or((0.0, 0.0)),
+                s.tray_shows_today
+                    .then(|| today_spent(&conn).ok())
+                    .flatten(),
                 checks(&conn, &s).unwrap_or_default(),
             ),
             Err(_) => return,
         };
         let (spent, projection) = month;
+        let today = today
+            .map(|t| format!(" · hoy: ${t:.2}"))
+            .unwrap_or_default();
         let _ = tray.set_tooltip(Some(&format!(
-            "AgentBoard — este mes: ${spent:.2} (proyección ${projection:.2})"
+            "AgentBoard — este mes: ${spent:.2} (proyección ${projection:.2}){today}"
         )));
 
         let Ok(mut notified) = self.notified.lock() else {
             return;
         };
-        for (title, body) in pending(&checks, &mut notified) {
+        let th = Thresholds {
+            at_80: s.alert_at_80,
+            at_100: s.alert_at_100,
+        };
+        for (title, body) in pending(&checks, &mut notified, th) {
             let _ = app
                 .notification()
                 .builder()
@@ -196,23 +229,63 @@ mod tests {
     #[test]
     fn avisa_una_vez_por_umbral() {
         let mut notified = HashSet::new();
-        let a = pending(&[check("codex", 58.0, 60.0)], &mut notified);
+        let a = pending(
+            &[check("codex", 58.0, 60.0)],
+            &mut notified,
+            Thresholds::ALL,
+        );
         assert_eq!(a.len(), 1);
         assert_eq!(a[0].0, "Cerca del presupuesto");
         assert!(a[0].1.contains("97%"));
         // Misma situación: no se repite.
-        assert!(pending(&[check("codex", 58.0, 60.0)], &mut notified).is_empty());
+        assert!(pending(
+            &[check("codex", 58.0, 60.0)],
+            &mut notified,
+            Thresholds::ALL
+        )
+        .is_empty());
         // Al superarlo, aviso del 100 % (una vez).
-        let b = pending(&[check("codex", 61.0, 60.0)], &mut notified);
+        let b = pending(
+            &[check("codex", 61.0, 60.0)],
+            &mut notified,
+            Thresholds::ALL,
+        );
         assert_eq!(b[0].0, "Presupuesto superado");
-        assert!(pending(&[check("codex", 70.0, 60.0)], &mut notified).is_empty());
+        assert!(pending(
+            &[check("codex", 70.0, 60.0)],
+            &mut notified,
+            Thresholds::ALL
+        )
+        .is_empty());
     }
 
     #[test]
     fn directo_al_100_marca_tambien_el_80() {
         let mut notified = HashSet::new();
-        assert_eq!(pending(&[check("day", 31.0, 30.0)], &mut notified).len(), 1);
-        assert!(pending(&[check("day", 25.0, 30.0)], &mut notified).is_empty());
+        assert_eq!(
+            pending(&[check("day", 31.0, 30.0)], &mut notified, Thresholds::ALL).len(),
+            1
+        );
+        assert!(pending(&[check("day", 25.0, 30.0)], &mut notified, Thresholds::ALL).is_empty());
+    }
+
+    #[test]
+    fn respeta_los_umbrales_desactivados() {
+        let mut notified = HashSet::new();
+        let only100 = Thresholds {
+            at_80: false,
+            at_100: true,
+        };
+        assert!(pending(&[check("a", 85.0, 100.0)], &mut notified, only100).is_empty());
+        assert_eq!(
+            pending(&[check("a", 101.0, 100.0)], &mut notified, only100).len(),
+            1
+        );
+        let none = Thresholds {
+            at_80: false,
+            at_100: false,
+        };
+        assert!(pending(&[check("b", 200.0, 100.0)], &mut HashSet::new(), none).is_empty());
     }
 
     #[test]
@@ -220,7 +293,8 @@ mod tests {
         let mut notified = HashSet::new();
         assert!(pending(
             &[check("a", 10.0, 0.0), check("b", 1.0, 60.0)],
-            &mut notified
+            &mut notified,
+            Thresholds::ALL
         )
         .is_empty());
     }

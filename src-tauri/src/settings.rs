@@ -22,6 +22,18 @@ pub struct Settings {
     pub budgets: Vec<ScopedBudget>,
     /// Precios fijados por el usuario; sustituyen a los de por defecto del modelo.
     pub price_overrides: Vec<PriceOverride>,
+    /// Avisar al llegar al 80 % de un presupuesto.
+    #[serde(default = "yes")]
+    pub alert_at_80: bool,
+    /// Avisar al llegar al 100 % de un presupuesto.
+    #[serde(default = "yes")]
+    pub alert_at_100: bool,
+    /// La bandeja muestra también el gasto de hoy.
+    pub tray_shows_today: bool,
+}
+
+fn yes() -> bool {
+    true
 }
 
 /// Presupuesto mensual acotado a un proyecto (`key` = raíz del repo) o a un agente (`key` = id).
@@ -64,6 +76,9 @@ impl Default for Settings {
             daily_budget: None,
             budgets: Vec::new(),
             price_overrides: Vec::new(),
+            alert_at_80: true,
+            alert_at_100: true,
+            tray_shows_today: false,
         }
     }
 }
