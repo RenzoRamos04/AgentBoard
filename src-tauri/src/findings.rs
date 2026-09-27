@@ -19,7 +19,7 @@ const SHELL_TOOLS: &[&str] = &["Bash", "shell", "exec_command", "run_shell_comma
 pub struct Finding {
     /// `compactions`, `expensive_model`, `tool_errors`, `spend_spike` o `cache_drop`.
     pub kind: String,
-    /// `critical`, `warn` o `info`.
+    /// `critical`, `warn`, `info` o `good` (lo que va bien).
     pub severity: String,
     pub params: Map<String, Value>,
     /// Texto en español, para quien no compone el suyo (servidor MCP).
@@ -39,7 +39,8 @@ fn rank(severity: &str) -> u8 {
     match severity {
         "critical" => 0,
         "warn" => 1,
-        _ => 2,
+        "info" => 2,
+        _ => 3,
     }
 }
 
@@ -67,6 +68,21 @@ pub fn compute(
     out.extend(tool_errors(conn, f)?);
     out.extend(spend_spike(conn, f, tz_offset_min)?);
     out.extend(cache_drop(conn, f, now)?);
+    // Avisos informativos y positivos: cuentan cómo es el uso aunque no haya problemas.
+    let s = queries::summary(conn, f, now)?;
+    out.extend(unpriced(conn, f, &s)?);
+    out.extend(concentration(conn, f, &s)?);
+    out.extend(top_session(conn, f, &s)?);
+    out.extend(shell_command_errors(conn, f)?);
+    out.extend(mcp_errors(conn, f)?);
+    out.extend(low_cache_models(conn, f)?);
+    out.extend(one_shot(conn, f)?);
+    out.extend(subagent_share(conn, f, &s)?);
+    out.extend(pace(conn, f, &s, tz_offset_min)?);
+    out.extend(after_hours(conn, f, &s, tz_offset_min)?);
+    out.extend(cost_per_session(conn, f, &s, now)?);
+    out.extend(unused_agents(conn, f)?);
+    out.extend(cache_savings(&s));
     out.sort_by_key(|x| rank(&x.severity));
     Ok(out)
 }
@@ -265,6 +281,359 @@ fn cache_drop(conn: &Connection, f: &Filter, now: i64) -> Result<Option<Finding>
     )))
 }
 
+// ---------------------------------------------------------------------------
+// Avisos informativos y positivos
+
+fn unpriced(conn: &Connection, f: &Filter, s: &queries::Summary) -> Result<Option<Finding>> {
+    if s.unpriced_models.is_empty() {
+        return Ok(None);
+    }
+    let calls: i64 = queries::breakdown(conn, f, "model")?
+        .iter()
+        .filter(|r| s.unpriced_models.contains(&r.key))
+        .map(|r| r.calls)
+        .sum();
+    let n = s.unpriced_models.len();
+    Ok(Some(finding(
+        "unpriced_models",
+        "warn",
+        json!({ "n": n, "models": s.unpriced_models.join(", "), "calls": calls }),
+        format!(
+            "{n} modelos sin precio ({}): {calls} llamadas cuentan como $0.",
+            s.unpriced_models.join(", ")
+        ),
+    )))
+}
+
+fn concentration(conn: &Connection, f: &Filter, s: &queries::Summary) -> Result<Vec<Finding>> {
+    let mut out = Vec::new();
+    if s.cost_usd <= 0.0 {
+        return Ok(out);
+    }
+    let projects = sessions::list_projects(conn, f)?;
+    if projects.len() > 1 {
+        if let Some(p) = projects.first().filter(|p| p.cost_usd / s.cost_usd >= 0.5) {
+            let share = p.cost_usd / s.cost_usd;
+            out.push(finding(
+                "project_share",
+                "info",
+                json!({ "project": p.name, "key": p.key, "share": share, "cost": p.cost_usd, "n": projects.len() }),
+                format!("{} concentra el {:.0}% del gasto (${:.2}) de {} proyectos.", p.name, share * 100.0, p.cost_usd, projects.len()),
+            ));
+        }
+    }
+    let models = queries::breakdown(conn, f, "model")?;
+    if models.len() > 1 {
+        if let Some(m) = models.first().filter(|m| m.cost_usd / s.cost_usd >= 0.7) {
+            let share = m.cost_usd / s.cost_usd;
+            out.push(finding(
+                "model_share",
+                "info",
+                json!({ "model": m.key, "share": share, "cost": m.cost_usd }),
+                format!(
+                    "El {:.0}% del gasto (${:.2}) va a {}.",
+                    share * 100.0,
+                    m.cost_usd,
+                    m.key
+                ),
+            ));
+        }
+    }
+    Ok(out)
+}
+
+fn top_session(conn: &Connection, f: &Filter, s: &queries::Summary) -> Result<Option<Finding>> {
+    let list = sessions::list_sessions(conn, f, None)?;
+    let Some(top) = list
+        .sessions
+        .iter()
+        .max_by(|a, b| a.cost_usd.total_cmp(&b.cost_usd))
+    else {
+        return Ok(None);
+    };
+    let share = if s.cost_usd > 0.0 {
+        top.cost_usd / s.cost_usd
+    } else {
+        0.0
+    };
+    if list.total < 2 || (share < 0.2 && top.cost_usd <= 5.0) || top.cost_usd <= 0.0 {
+        return Ok(None);
+    }
+    let project = top
+        .project
+        .clone()
+        .unwrap_or_else(|| "(sin proyecto)".into());
+    Ok(Some(finding(
+        "top_session",
+        "info",
+        json!({
+            "sessionId": top.id, "cost": top.cost_usd, "share": share, "project": project,
+            "branch": top.branch.clone().unwrap_or_default(), "model": top.model.clone().unwrap_or_default(),
+            "durationMs": top.ended_at - top.started_at,
+        }),
+        format!(
+            "La sesión más cara: ${:.2} ({:.0}% del gasto) en {project}.",
+            top.cost_usd,
+            share * 100.0
+        ),
+    )))
+}
+
+fn shell_command_errors(conn: &Connection, f: &Filter) -> Result<Option<Finding>> {
+    let rows = shell_commands(conn, f)?;
+    let Some(c) = rows
+        .iter()
+        .filter(|c| c.errors >= 5 && c.errors as f64 / c.calls as f64 >= 0.05)
+        .max_by_key(|c| c.errors)
+    else {
+        return Ok(None);
+    };
+    let rate = c.errors as f64 / c.calls as f64;
+    Ok(Some(finding(
+        "command_errors",
+        "info",
+        json!({ "command": c.key, "errors": c.errors, "calls": c.calls, "rate": rate }),
+        format!(
+            "{} es el comando que más falla: {} de {} ({:.0}%).",
+            c.key,
+            c.errors,
+            c.calls,
+            rate * 100.0
+        ),
+    )))
+}
+
+fn mcp_errors(conn: &Connection, f: &Filter) -> Result<Vec<Finding>> {
+    let mut rows: Vec<_> = crate::insights::mcp_servers(conn, f)?
+        .into_iter()
+        .filter(|r| r.calls >= 10 && r.errors as f64 / r.calls as f64 > 0.10)
+        .collect();
+    rows.sort_by(|a, b| (b.errors * a.calls).cmp(&(a.errors * b.calls)));
+    Ok(rows
+        .into_iter()
+        .take(2)
+        .map(|r| {
+            let rate = r.errors as f64 / r.calls as f64;
+            finding(
+                "mcp_errors",
+                "warn",
+                json!({ "server": r.key, "errors": r.errors, "calls": r.calls, "rate": rate }),
+                format!(
+                    "El servidor MCP {} falla un {:.0}% ({} de {} usos).",
+                    r.key,
+                    rate * 100.0,
+                    r.errors,
+                    r.calls
+                ),
+            )
+        })
+        .collect())
+}
+
+fn low_cache_models(conn: &Connection, f: &Filter) -> Result<Option<Finding>> {
+    let worst = queries::breakdown(conn, f, "model")?
+        .into_iter()
+        .filter(|m| m.calls >= 100 && m.cache_hit < 0.7)
+        .min_by(|a, b| a.cache_hit.total_cmp(&b.cache_hit));
+    Ok(worst.map(|m| {
+        finding(
+            "low_cache",
+            "warn",
+            json!({ "model": m.key, "cacheHit": m.cache_hit, "calls": m.calls }),
+            format!(
+                "{} solo aprovecha la caché en un {:.0}% de la entrada ({} llamadas).",
+                m.key,
+                m.cache_hit * 100.0,
+                m.calls
+            ),
+        )
+    }))
+}
+
+fn one_shot(conn: &Connection, f: &Filter) -> Result<Option<Finding>> {
+    let report = crate::insights::activity(conn, f)?;
+    let edits: i64 = report.activities.iter().map(|a| a.edit_turns).sum();
+    if edits < 20 {
+        return Ok(None);
+    }
+    let ok: f64 = report
+        .activities
+        .iter()
+        .map(|a| a.one_shot.unwrap_or(0.0) * a.edit_turns as f64)
+        .sum();
+    let rate = ok / edits as f64;
+    let p = json!({ "rate": rate, "turns": edits });
+    Ok(if rate < 0.8 {
+        Some(finding(
+            "one_shot_low",
+            "warn",
+            p,
+            format!(
+                "Solo el {:.0}% de los {edits} turnos con ediciones sale a la primera.",
+                rate * 100.0
+            ),
+        ))
+    } else if rate >= 0.95 {
+        Some(finding(
+            "one_shot_good",
+            "good",
+            p,
+            format!(
+                "El {:.0}% de los {edits} turnos con ediciones sale a la primera.",
+                rate * 100.0
+            ),
+        ))
+    } else {
+        None
+    })
+}
+
+fn subagent_share(conn: &Connection, f: &Filter, s: &queries::Summary) -> Result<Option<Finding>> {
+    if s.cost_usd <= 0.0 {
+        return Ok(None);
+    }
+    let rows = crate::insights::agent_types(conn, f)?;
+    let cost: f64 = rows.iter().map(|r| r.cost_usd).sum();
+    let share = cost / s.cost_usd;
+    if share < 0.2 {
+        return Ok(None);
+    }
+    let top = rows.first().map(|r| r.label.clone()).unwrap_or_default();
+    Ok(Some(finding(
+        "subagent_share",
+        "info",
+        json!({ "share": share, "cost": cost, "top": top }),
+        format!(
+            "Los subagentes suman el {:.0}% del gasto (${cost:.2}); el que más, {top}.",
+            share * 100.0
+        ),
+    )))
+}
+
+fn pace(conn: &Connection, f: &Filter, s: &queries::Summary, tz: i64) -> Result<Option<Finding>> {
+    let hours: Vec<_> = queries::timeseries(conn, f, "hour", tz)?
+        .into_iter()
+        .filter(|p| p.cost_usd > 0.0)
+        .collect();
+    if hours.len() < 3 {
+        return Ok(None);
+    }
+    let avg = hours.iter().map(|p| p.cost_usd).sum::<f64>() / hours.len() as f64;
+    let now = s.burn_rate_usd_h;
+    if now <= 1.0 || now <= 2.0 * avg {
+        return Ok(None);
+    }
+    Ok(Some(finding(
+        "pace",
+        "info",
+        json!({ "now": now, "avg": avg, "times": now / avg }),
+        format!(
+            "Ahora mismo gastas ${now:.2}/h, {:.1}× tu media por hora activa (${avg:.2}).",
+            now / avg
+        ),
+    )))
+}
+
+fn after_hours(
+    conn: &Connection,
+    f: &Filter,
+    s: &queries::Summary,
+    tz: i64,
+) -> Result<Option<Finding>> {
+    if s.cost_usd <= 0.0 {
+        return Ok(None);
+    }
+    let hour_of = |ts: i64| (ts + tz * 60_000).rem_euclid(86_400_000) / 3_600_000;
+    let late: f64 = queries::timeseries(conn, f, "hour", tz)?
+        .iter()
+        .filter(|p| !(9..19).contains(&hour_of(p.ts)))
+        .map(|p| p.cost_usd)
+        .sum();
+    let share = late / s.cost_usd;
+    if share < 0.3 {
+        return Ok(None);
+    }
+    Ok(Some(finding(
+        "after_hours",
+        "info",
+        json!({ "share": share, "cost": late }),
+        format!(
+            "El {:.0}% del gasto (${late:.2}) es antes de las 9 o desde las 19 h.",
+            share * 100.0
+        ),
+    )))
+}
+
+fn cost_per_session(
+    conn: &Connection,
+    f: &Filter,
+    cur: &queries::Summary,
+    now: i64,
+) -> Result<Option<Finding>> {
+    let Some(from) = f.from else { return Ok(None) };
+    let span = f.to.unwrap_or(now) - from;
+    let prev = Filter {
+        from: Some(from - span),
+        to: Some(from),
+        ..f.clone()
+    };
+    let before = queries::summary(conn, &prev, now)?;
+    if cur.sessions < 3 || before.sessions < 3 || before.cost_usd <= 0.0 {
+        return Ok(None);
+    }
+    let (a, b) = (
+        before.cost_usd / before.sessions as f64,
+        cur.cost_usd / cur.sessions as f64,
+    );
+    let change = b / a - 1.0;
+    if change <= 0.3 {
+        return Ok(None);
+    }
+    Ok(Some(finding(
+        "session_cost_up",
+        "warn",
+        json!({ "before": a, "now": b, "change": change }),
+        format!("Cada sesión cuesta de media ${b:.2}, un {:.0}% más que en el periodo anterior (${a:.2}).", change * 100.0),
+    )))
+}
+
+fn unused_agents(conn: &Connection, f: &Filter) -> Result<Option<Finding>> {
+    let idle: Vec<String> = queries::list_agents(conn, f)?
+        .into_iter()
+        .filter(|a| a.calls == 0)
+        .filter(|a| f.agents.as_ref().is_none_or(|ids| ids.contains(&a.id)))
+        .map(|a| a.name)
+        .collect();
+    if idle.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(finding(
+        "unused_agents",
+        "info",
+        json!({ "n": idle.len(), "agents": idle.join(", ") }),
+        format!(
+            "{} agentes instalados sin uso en el periodo: {}.",
+            idle.len(),
+            idle.join(", ")
+        ),
+    )))
+}
+
+fn cache_savings(s: &queries::Summary) -> Option<Finding> {
+    (s.cost_usd > 0.0 && s.cache_savings_usd > s.cost_usd).then(|| {
+        let times = s.cache_savings_usd / s.cost_usd;
+        finding(
+            "cache_savings",
+            "good",
+            json!({ "saving": s.cache_savings_usd, "cost": s.cost_usd, "times": times }),
+            format!(
+                "La caché te ahorró ${:.2}, {times:.1}× lo que gastaste (${:.2}).",
+                s.cache_savings_usd, s.cost_usd
+            ),
+        )
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -311,8 +680,8 @@ mod tests {
 
     #[test]
     fn sin_avisos() {
+        // Sin actividad no hay nada que contar.
         let c = db::open_in_memory().unwrap();
-        testdata::seed(&c);
         assert!(compute(&c, &Filter::default(), 10_000, 0)
             .unwrap()
             .is_empty());
@@ -465,5 +834,158 @@ mod tests {
         ];
         v.sort_by_key(|x| rank(&x.severity));
         assert_eq!(v.iter().map(|x| x.kind.as_str()).collect::<String>(), "bca");
+    }
+
+    fn kinds(c: &Connection, f: &Filter) -> Vec<String> {
+        compute(c, f, 100 * DAY, 0)
+            .unwrap()
+            .into_iter()
+            .map(|x| x.kind)
+            .collect()
+    }
+
+    #[test]
+    fn avisos_informativos_con_datos_normales() {
+        let c = db::open_in_memory().unwrap();
+        testdata::seed(&c);
+        // s1: web (4.5 USD) · s2: api (1 USD) · s3: web, modelo sin precio.
+        let k = kinds(&c, &Filter::default());
+        for expected in [
+            "unpriced_models",
+            "project_share",
+            "model_share",
+            "top_session",
+        ] {
+            assert!(
+                k.contains(&expected.to_string()),
+                "falta {expected} en {k:?}"
+            );
+        }
+        let all = compute(&c, &Filter::default(), 100 * DAY, 0).unwrap();
+        let share = all.iter().find(|x| x.kind == "project_share").unwrap();
+        assert_eq!(share.params["project"], "web");
+        let top = all.iter().find(|x| x.kind == "top_session").unwrap();
+        assert_eq!(top.params["sessionId"], "s1");
+    }
+
+    #[test]
+    fn gravedades_ordenadas_con_good_al_final() {
+        let c = db::open_in_memory().unwrap();
+        testdata::seed(&c);
+        // Mucha lectura de caché: el ahorro supera al coste.
+        c.execute(
+            "UPDATE calls SET cache_read = 50000000 WHERE message_id = 'm1'",
+            [],
+        )
+        .unwrap();
+        let all = compute(&c, &Filter::default(), 100 * DAY, 0).unwrap();
+        assert_eq!(all.last().unwrap().severity, "good");
+        assert!(all.iter().any(|x| x.kind == "cache_savings"));
+        let ranks: Vec<u8> = all.iter().map(|x| rank(&x.severity)).collect();
+        assert!(ranks.windows(2).all(|w| w[0] <= w[1]));
+    }
+
+    #[test]
+    fn comando_y_mcp_que_fallan() {
+        let c = conn();
+        session(&c, "a", "main");
+        for i in 0..75 {
+            let err = i < 9;
+            c.execute(
+                "INSERT INTO tool_calls (call_id,session_id,ts,tool,target,is_error) VALUES (?1,'a',?2,'Bash','npm test',?3)",
+                params![format!("b{i}"), i, err],
+            )
+            .unwrap();
+        }
+        for i in 0..20 {
+            c.execute(
+                "INSERT INTO tool_calls (call_id,session_id,ts,tool,is_error) VALUES (?1,'a',?2,'mcp__figma__get',?3)",
+                params![format!("m{i}"), i, i < 5],
+            )
+            .unwrap();
+        }
+        let cmd = shell_command_errors(&c, &Filter::default())
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            (&cmd.params["command"], &cmd.params["errors"]),
+            (&json!("npm"), &json!(9))
+        );
+        let mcp = mcp_errors(&c, &Filter::default()).unwrap();
+        assert_eq!(mcp[0].params["server"], "figma");
+    }
+
+    #[test]
+    fn fuera_de_horario_y_agentes_sin_uso() {
+        let c = conn();
+        session(&c, "a", "main");
+        // 22:00 UTC (tz 0) → fuera de horario; 11:00 → dentro.
+        call(
+            &c,
+            "n",
+            "a",
+            22 * 3_600_000,
+            "claude-sonnet-5",
+            3_000_000,
+            0,
+            None,
+        );
+        call(
+            &c,
+            "d",
+            "a",
+            11 * 3_600_000,
+            "claude-sonnet-5",
+            1_000_000,
+            0,
+            None,
+        );
+        c.execute("INSERT INTO agents VALUES ('codex','Codex','/x',0)", [])
+            .unwrap();
+        let s = queries::summary(&c, &Filter::default(), 0).unwrap();
+        let late = after_hours(&c, &Filter::default(), &s, 0).unwrap().unwrap();
+        assert!((late.params["share"].as_f64().unwrap() - 0.75).abs() < 1e-9);
+        let idle = unused_agents(&c, &Filter::default()).unwrap().unwrap();
+        assert_eq!(idle.params["agents"], "Codex");
+    }
+
+    #[test]
+    fn coste_por_sesion_al_alza() {
+        let c = conn();
+        for (i, (ts, input)) in [
+            (5, 1_000_000),
+            (6, 1_000_000),
+            (7, 1_000_000),
+            (15, 2_000_000),
+            (16, 2_000_000),
+            (17, 2_000_000),
+        ]
+        .iter()
+        .enumerate()
+        {
+            let id = format!("s{i}");
+            session(&c, &id, "main");
+            call(
+                &c,
+                &format!("m{i}"),
+                &id,
+                *ts,
+                "claude-sonnet-5",
+                *input,
+                0,
+                None,
+            );
+        }
+        let f = Filter {
+            from: Some(10),
+            to: Some(20),
+            ..Default::default()
+        };
+        let s = queries::summary(&c, &f, 20).unwrap();
+        let x = cost_per_session(&c, &f, &s, 20).unwrap().unwrap();
+        assert!(
+            (x.params["change"].as_f64().unwrap() - 1.0).abs() < 1e-9,
+            "de 2 a 4 USD por sesión"
+        );
     }
 }
