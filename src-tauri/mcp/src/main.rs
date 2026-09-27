@@ -60,25 +60,30 @@ fn scan() -> Result<Connection> {
 
 /// Enruta un mensaje JSON-RPC. Devuelve `None` para notificaciones (sin `id`, sin respuesta).
 fn handle(conn: &Connection, req: &Value) -> Option<Value> {
-    let id = req.get("id").cloned();
+    // Sin `id` (o con id null) es una notificación: JSON-RPC 2.0 prohíbe responderla,
+    // sea cual sea el método (también un `ping` enviado como notificación).
+    let id = req.get("id").filter(|v| !v.is_null()).cloned()?;
     let method = req.get("method").and_then(Value::as_str).unwrap_or("");
     match method {
-        "initialize" => Some(result(id, initialize(req))),
-        "ping" => Some(result(id, json!({}))),
-        "tools/list" => Some(result(id, json!({ "tools": tools_list() }))),
-        "tools/call" => Some(tools_call(conn, id, req)),
-        // Notificaciones conocidas: no se responde.
-        m if m.starts_with("notifications/") => None,
-        // Método desconocido: error si trae `id`; si no, es una notificación y no se responde.
-        _ => id.map(|id| error(id, -32601, "Method not found")),
+        "initialize" => Some(result(Some(id), initialize(req))),
+        "ping" => Some(result(Some(id), json!({}))),
+        "tools/list" => Some(result(Some(id), json!({ "tools": tools_list() }))),
+        "tools/call" => Some(tools_call(conn, Some(id), req)),
+        // Método desconocido con id: error JSON-RPC.
+        _ => Some(error(id, -32601, "Method not found")),
     }
 }
 
+/// Versiones del protocolo MCP que este servidor implementa.
+const SUPPORTED: &[&str] = &["2025-06-18", "2025-03-26", "2024-11-05"];
+
 fn initialize(req: &Value) -> Value {
-    // Devolvemos la versión de protocolo que pida el cliente si viene; si no, la nuestra.
-    let pv = req["params"]["protocolVersion"]
-        .as_str()
-        .unwrap_or(PROTOCOL);
+    // Negociación del ciclo de vida MCP: si el cliente pide una versión soportada se
+    // responde esa; si no, la nuestra más reciente (y el cliente decide si le vale).
+    let pv = match req["params"]["protocolVersion"].as_str() {
+        Some(v) if SUPPORTED.contains(&v) => v,
+        _ => PROTOCOL,
+    };
     json!({
         "protocolVersion": pv,
         "capabilities": { "tools": {} },
@@ -362,6 +367,44 @@ mod tests {
             &json!({ "jsonrpc": "2.0", "method": "notifications/initialized" })
         )
         .is_none());
+    }
+
+    #[test]
+    fn negocia_version_y_no_responde_notificaciones() {
+        let conn = db::open_in_memory().unwrap();
+        let init = |v: Value| {
+            handle(
+                &conn,
+                &json!({ "jsonrpc": "2.0", "id": 1, "method": "initialize",
+                         "params": { "protocolVersion": v } }),
+            )
+            .unwrap()
+        };
+        // Versión desconocida o mal tipada: se ofrece la nuestra, no se repite la suya.
+        assert_eq!(
+            init(json!("2099-01-01"))["result"]["protocolVersion"],
+            PROTOCOL
+        );
+        assert_eq!(init(json!(42))["result"]["protocolVersion"], PROTOCOL);
+        // Versión soportada: se confirma esa misma.
+        assert_eq!(
+            init(json!("2025-03-26"))["result"]["protocolVersion"],
+            "2025-03-26"
+        );
+        // `ping` como petición responde; como notificación (sin id o id null), no.
+        assert!(handle(
+            &conn,
+            &json!({ "jsonrpc": "2.0", "id": 2, "method": "ping" })
+        )
+        .is_some());
+        assert!(handle(&conn, &json!({ "jsonrpc": "2.0", "method": "ping" })).is_none());
+        assert!(handle(
+            &conn,
+            &json!({ "jsonrpc": "2.0", "id": Value::Null, "method": "ping" })
+        )
+        .is_none());
+        // Método desconocido sin id: notificación desconocida, tampoco se responde.
+        assert!(handle(&conn, &json!({ "jsonrpc": "2.0", "method": "no_existe" })).is_none());
     }
 
     #[test]
