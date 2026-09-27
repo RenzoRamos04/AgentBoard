@@ -55,7 +55,7 @@ pub struct SessionList {
 }
 
 /// «AND col >= from AND col < to» con los límites del filtro incrustados (son i64).
-fn time_bounds(f: &Filter, col: &str) -> String {
+pub(crate) fn time_bounds(f: &Filter, col: &str) -> String {
     let mut s = String::new();
     if let Some(from) = f.from {
         s.push_str(&format!(" AND {col} >= {from}"));

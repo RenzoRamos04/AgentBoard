@@ -5,7 +5,7 @@ use crate::insights::{classify_turn, shell_commands, turn_stats};
 use crate::queries::{self, Filter};
 use crate::sessions;
 use anyhow::Result;
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, params_from_iter, Connection, OptionalExtension};
 use serde::Serialize;
 use serde_json::{json, Map, Value};
 use std::collections::HashMap;
@@ -88,26 +88,30 @@ pub fn compute(
 }
 
 fn compactions(conn: &Connection, f: &Filter) -> Result<Option<Finding>> {
-    let list = sessions::list_sessions(conn, f, None)?;
-    let mut heavy: Vec<_> = list
-        .sessions
-        .iter()
-        .filter(|s| s.compactions >= 3)
-        .collect();
-    if heavy.is_empty() {
+    // Agregado directo sobre todo el filtro: el listado de sesiones se queda en las 500 más
+    // recientes y ocultaría sesiones antiguas con muchas compactaciones.
+    let (w, args) = f.sql("e.ts");
+    let cost_bounds = sessions::time_bounds(f, "cc.ts");
+    let sql = format!(
+        "SELECT e.session_id, COUNT(*) AS n, COALESCE(p.name, '(sin proyecto)'),
+                COALESCE(s.git_branch, ''),
+                (SELECT COALESCE(SUM(cc.cost_usd), 0) FROM call_costs cc
+                  WHERE cc.session_id = e.session_id{cost_bounds}) AS cost
+         FROM events e JOIN sessions s ON s.id = e.session_id
+         LEFT JOIN projects p ON p.id = s.project_id
+         WHERE e.kind = 'compaction' AND {w}
+         GROUP BY 1 HAVING n >= 3
+         ORDER BY n DESC, cost DESC"
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let heavy: Vec<(String, i64, String, String)> = stmt
+        .query_map(params_from_iter(args.iter()), |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+        })?
+        .collect::<rusqlite::Result<_>>()?;
+    let Some((session_id, max, project, branch)) = heavy.first().cloned() else {
         return Ok(None);
-    }
-    heavy.sort_by(|a, b| {
-        b.compactions
-            .cmp(&a.compactions)
-            .then(b.cost_usd.total_cmp(&a.cost_usd))
-    });
-    let top = heavy[0];
-    let project = top
-        .project
-        .clone()
-        .unwrap_or_else(|| "(sin proyecto)".into());
-    let branch = top.branch.clone().unwrap_or_default();
+    };
     let place = if branch.is_empty() {
         project.clone()
     } else {
@@ -116,11 +120,10 @@ fn compactions(conn: &Connection, f: &Filter) -> Result<Option<Finding>> {
     Ok(Some(finding(
         "compactions",
         "critical",
-        json!({ "n": heavy.len(), "project": project, "branch": branch, "max": top.compactions, "sessionId": top.id }),
+        json!({ "n": heavy.len(), "project": project, "branch": branch, "max": max, "sessionId": session_id }),
         format!(
-            "{} sesiones con 3+ compactaciones de contexto; la peor ({} compactaciones) en {place}. Divide la tarea o delega en subagentes.",
+            "{} sesiones con 3+ compactaciones de contexto; la peor ({max} compactaciones) en {place}. Divide la tarea o delega en subagentes.",
             heavy.len(),
-            top.compactions
         ),
     )))
 }
@@ -350,37 +353,69 @@ fn concentration(conn: &Connection, f: &Filter, s: &queries::Summary) -> Result<
 }
 
 fn top_session(conn: &Connection, f: &Filter, s: &queries::Summary) -> Result<Option<Finding>> {
-    let list = sessions::list_sessions(conn, f, None)?;
-    let Some(top) = list
-        .sessions
-        .iter()
-        .max_by(|a, b| a.cost_usd.total_cmp(&b.cost_usd))
-    else {
+    // Agregado directo (sin el recorte a 500 del listado): la sesión más cara de todo el filtro.
+    let (w, args) = f.sql("c.ts");
+    let top: Option<(String, f64, String, String, i64, i64)> = conn
+        .query_row(
+            &format!(
+                "SELECT c.session_id, SUM(c.cost_usd) AS cost, COALESCE(p.name, '(sin proyecto)'),
+                        COALESCE(s.git_branch, ''), MIN(c.ts), MAX(c.ts)
+                 FROM call_costs c JOIN sessions s ON s.id = c.session_id
+                 LEFT JOIN projects p ON p.id = s.project_id
+                 WHERE {w} GROUP BY 1 ORDER BY cost DESC LIMIT 1"
+            ),
+            params_from_iter(args.iter()),
+            |r| {
+                Ok((
+                    r.get(0)?,
+                    r.get(1)?,
+                    r.get(2)?,
+                    r.get(3)?,
+                    r.get(4)?,
+                    r.get(5)?,
+                ))
+            },
+        )
+        .optional()?;
+    let Some((session_id, cost, project, branch, first, last)) = top else {
         return Ok(None);
     };
+    let total: i64 = conn.query_row(
+        &format!(
+            "SELECT COUNT(DISTINCT c.session_id) FROM call_costs c JOIN sessions s ON s.id = c.session_id WHERE {w}"
+        ),
+        params_from_iter(args.iter()),
+        |r| r.get(0),
+    )?;
     let share = if s.cost_usd > 0.0 {
-        top.cost_usd / s.cost_usd
+        cost / s.cost_usd
     } else {
         0.0
     };
-    if list.total < 2 || (share < 0.2 && top.cost_usd <= 5.0) || top.cost_usd <= 0.0 {
+    if total < 2 || (share < 0.2 && cost <= 5.0) || cost <= 0.0 {
         return Ok(None);
     }
-    let project = top
-        .project
-        .clone()
-        .unwrap_or_else(|| "(sin proyecto)".into());
+    let tb = sessions::time_bounds(f, "ts");
+    let model: Option<String> = conn
+        .query_row(
+            &format!(
+                "SELECT model FROM call_costs WHERE session_id = ?1{tb}
+                 GROUP BY 1 ORDER BY SUM(cost_usd) DESC, COUNT(*) DESC LIMIT 1"
+            ),
+            [&session_id],
+            |r| r.get(0),
+        )
+        .optional()?;
     Ok(Some(finding(
         "top_session",
         "info",
         json!({
-            "sessionId": top.id, "cost": top.cost_usd, "share": share, "project": project,
-            "branch": top.branch.clone().unwrap_or_default(), "model": top.model.clone().unwrap_or_default(),
-            "durationMs": top.ended_at - top.started_at,
+            "sessionId": session_id, "cost": cost, "share": share, "project": project,
+            "branch": branch, "model": model.unwrap_or_default(),
+            "durationMs": last - first,
         }),
         format!(
-            "La sesión más cara: ${:.2} ({:.0}% del gasto) en {project}.",
-            top.cost_usd,
+            "La sesión más cara: ${cost:.2} ({:.0}% del gasto) en {project}.",
             share * 100.0
         ),
     )))
