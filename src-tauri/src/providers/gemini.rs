@@ -235,6 +235,10 @@ impl Provider for Gemini {
             && self.log_roots().iter().any(|r| path.starts_with(r))
     }
 
+    fn knows(&self, path: &Path) -> bool {
+        self.state.lock().is_ok_and(|s| s.contains_key(path))
+    }
+
     fn reset(&self, path: &Path) {
         self.state
             .lock()

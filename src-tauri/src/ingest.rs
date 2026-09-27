@@ -156,13 +156,20 @@ pub fn ingest_file(
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .optional()?;
-    let start = match &prev {
-        Some((fid, off)) if *fid == file_id && size >= *off => *off,
-        _ => 0,
-    };
-    if prev.is_some() && start == size {
+    let same_file = |fid: &String, off: i64| *fid == file_id && size >= off;
+    // Sin nada nuevo desde la última lectura: no hay que hacer nada.
+    if prev
+        .as_ref()
+        .is_some_and(|(fid, off)| same_file(fid, *off) && *off == size)
+    {
         return Ok(FileResult::default());
     }
+    let start = match &prev {
+        // A mitad de archivo solo si el proveedor conserva su estado; si no, se relee entero
+        // (idempotente: llamadas, herramientas, turnos y eventos tienen id propio).
+        Some((fid, off)) if same_file(fid, *off) && provider.knows(path) => *off,
+        _ => 0,
+    };
     if start == 0 {
         provider.reset(path);
     }

@@ -66,6 +66,9 @@ fn run(
         }
     };
     watch_new(&mut watcher, &mut watched);
+    // Las mismas instancias en todas las relecturas: los proveedores con estado entre líneas
+    // (Codex, Gemini, Cursor, Copilot) lo conservan y no releen cada archivo entero.
+    let readers = providers();
 
     loop {
         // Espera al primer evento (o revisa periódicamente si hay carpetas nuevas).
@@ -82,7 +85,7 @@ fn run(
         while rx.recv_timeout(DEBOUNCE).is_ok() && start.elapsed() < Duration::from_secs(5) {}
 
         let scanned = match db.lock() {
-            Ok(mut conn) => ingest::scan_all(&mut conn, &providers())
+            Ok(mut conn) => ingest::scan_all(&mut conn, &readers)
                 .map(|s| s.records)
                 .unwrap_or(0),
             Err(_) => 0,
