@@ -23,3 +23,18 @@ group("describe", () => {
     expect(d.body).toContain("$6.00");
   });
 });
+
+group("describe: avisos informativos", () => {
+  it("la concentración enlaza al proyecto y la sesión más cara a la sesión", () => {
+    const share = describe({ kind: "project_share", severity: "info", params: { project: "AgentBoard", key: "/w", share: 0.93, cost: 276, n: 6 }, message: "" });
+    expect(share.title).toBe("AgentBoard concentra el 93% del gasto");
+    expect(share.projectKey).toBe("/w");
+    const top = describe({ kind: "top_session", severity: "info", params: { sessionId: "s9", cost: 38.62, share: 0.8, project: "web", branch: "", model: "", durationMs: 3_600_000 }, message: "" });
+    expect(top.sessionId).toBe("s9");
+    expect(top.body).toContain("1 h");
+  });
+  it("un tipo desconocido usa el texto del núcleo", () => {
+    const d = describe({ kind: "otro" as never, severity: "info", params: {}, message: "Texto en español" });
+    expect(d.title).toBe("Texto en español");
+  });
+});

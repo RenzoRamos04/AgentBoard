@@ -49,6 +49,11 @@ export default function App() {
     setSectionState("projects");
     setSessionId(id);
   };
+  const openProject = (key: string) => {
+    setSectionState("projects");
+    setSessionId(null);
+    setProjectKey(key);
+  };
   const [period, setPeriod] = useState<Period>({ kind: "30d" });
   // Se guardan los *ocultos*: un agente o proyecto nuevo aparece incluido por defecto.
   const [hiddenAgents, setHiddenAgents] = useState<Set<string>>(new Set());
@@ -194,10 +199,10 @@ export default function App() {
   else if (!data) content = <div className="main muted">{t("Cargando…")}</div>;
   else if (section === "heatmap") content = <Heatmap data={data} period={period} />;
   else if (section === "overview")
-    content = <Overview data={data} period={period} budget={settings.monthlyBudget} singleProject={singleProject} open={setSection} openSession={openSession} />;
+    content = <Overview data={data} period={period} budget={settings.monthlyBudget} singleProject={singleProject} open={setSection} openSession={openSession} openProject={openProject} />;
   else if (!SECTIONS.some((x) => x.id === section))
     // Apartado que ya no existe (p. ej. tras una actualización en caliente): al resumen.
-    content = <Overview data={data} period={period} budget={settings.monthlyBudget} singleProject={singleProject} open={setSection} openSession={openSession} />;
+    content = <Overview data={data} period={period} budget={settings.monthlyBudget} singleProject={singleProject} open={setSection} openSession={openSession} openProject={openProject} />;
   else content = <Section id={section} data={data} period={period} singleProject={singleProject} back={() => setSection("overview")} />;
 
   return (

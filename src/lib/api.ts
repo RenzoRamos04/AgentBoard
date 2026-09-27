@@ -205,11 +205,31 @@ export interface SessionDetail {
   tools: ToolStat[];
 }
 
-export type InsightKind = "compactions" | "expensive_model" | "tool_errors" | "spend_spike" | "cache_drop";
+export type InsightKind =
+  | "compactions"
+  | "expensive_model"
+  | "tool_errors"
+  | "spend_spike"
+  | "cache_drop"
+  | "unpriced_models"
+  | "project_share"
+  | "model_share"
+  | "top_session"
+  | "command_errors"
+  | "mcp_errors"
+  | "low_cache"
+  | "one_shot_low"
+  | "one_shot_good"
+  | "subagent_share"
+  | "pace"
+  | "after_hours"
+  | "session_cost_up"
+  | "unused_agents"
+  | "cache_savings";
 
 export interface Insight {
   kind: InsightKind;
-  severity: "critical" | "warn" | "info";
+  severity: "critical" | "warn" | "info" | "good";
   params: Record<string, string | number>;
   /** Texto en español (el que usa el servidor MCP). */
   message: string;

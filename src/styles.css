@@ -563,3 +563,5 @@ kbd { font-family: var(--font-mono); font-size: 10px; color: var(--text-secondar
 @media (max-width: 1180px) {
   .live span:last-child { display: none; }
 }
+.insights-more { align-self: flex-start; margin-top: 8px; }
+#insights { max-height: none; }

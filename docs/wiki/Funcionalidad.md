@@ -26,15 +26,29 @@ y su gráfico, y una vista ampliada al pulsarlo. Todo respeta los filtros activo
 
 ## Lo que deberías saber
 
-La portada calcula avisos sobre el filtro activo, del más grave al menos:
+La portada calcula avisos sobre el filtro activo, del más grave al menos (importante, aviso,
+información y lo que va bien); enseña los cinco primeros y un botón para ver todos. Cada aviso
+enlaza a donde investigarlo.
 
-- **Compactaciones** — sesiones con 3 o más compactaciones de contexto.
-- **Modelo caro en tareas sencillas** — turnos de exploración y conversación hechos con Opus o
-  Fable, con el ahorro estimado si se hubieran hecho con Sonnet 5.
-- **Herramienta que falla** — herramientas con 20+ usos y más de un 10 % de error (con el
-  comando de shell que más falla).
-- **Pico de gasto** — un día con más del doble de la media y por encima de media + 2σ.
-- **Caída del cache hit** — más de 3 puntos frente al periodo anterior.
+| Aviso | Salta cuando |
+| --- | --- |
+| Compactaciones | Hay sesiones con 3 o más compactaciones de contexto |
+| Modelo caro en tareas sencillas | Opus o Fable en exploración/conversación, con ahorro estimado > 1 USD usando Sonnet 5 |
+| Herramienta que falla | ≥ 20 usos y > 10 % de error |
+| Servidor MCP que falla | ≥ 10 usos y > 10 % de error |
+| Comando que falla | ≥ 5 errores y ≥ 5 % (sin contar auxiliares como `echo`, `cd` o `grep`) |
+| Modelos sin precio | Algún modelo del periodo no tiene precio |
+| Cache hit bajo | Un modelo con ≥ 100 llamadas por debajo del 70 % |
+| 1-shot bajo / bueno | < 80 % o ≥ 95 %, con ≥ 20 turnos con ediciones |
+| Concentración | Un proyecto con ≥ 50 % del gasto, o un modelo con ≥ 70 % |
+| Sesión más cara | Supone ≥ 20 % del gasto o más de 5 USD |
+| Subagentes | Suman ≥ 20 % del gasto |
+| Ritmo alto | La última hora cuesta más del doble de la media por hora activa |
+| Fuera de horario | ≥ 30 % del gasto antes de las 9 o desde las 19 h |
+| Pico de gasto | Un día > 2× la media y > media + 2σ (con ≥ 5 días de actividad) |
+| Caída del cache hit / coste por sesión al alza | Frente al periodo anterior: > 3 puntos / > 30 % |
+| Agentes sin uso | Instalados pero sin llamadas en el periodo |
+| Ahorro por caché | La caché ahorró más de lo que se gastó |
 
 ## Métricas destacadas
 

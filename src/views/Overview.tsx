@@ -144,6 +144,7 @@ export function Overview({
   singleProject,
   open,
   openSession,
+  openProject,
 }: {
   data: DashboardData;
   period: Period;
@@ -151,6 +152,7 @@ export function Overview({
   singleProject: string | null;
   open: (s: SectionId) => void;
   openSession: (id: string) => void;
+  openProject: (key: string) => void;
 }) {
   const scope = singleProject ? t("proyecto {name}", { name: singleProject }) : t("todos los agentes y proyectos");
   const monthSpent = data.month.reduce((a, p) => a + p.costUsd, 0);
@@ -180,7 +182,7 @@ export function Overview({
           <DailyByAgent data={data} />
         </Panel>
         <Panel id="insights" title={t("Lo que deberías saber")} question={data.insights.length ? t("{n} avisos", { n: data.insights.length }) : undefined}>
-          <Insights items={data.insights} open={open} openSession={openSession} />
+          <Insights items={data.insights} open={open} openSession={openSession} openProject={openProject} />
         </Panel>
       </div>
       <div className="grid-3">
