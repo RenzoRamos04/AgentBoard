@@ -41,13 +41,6 @@ La portada SHALL mostrar, en este orden: los KPIs del resumen; el gasto diario a
 - **WHEN** el usuario pulsa «By Project ›» en la tarjeta Top proyectos
 - **THEN** se abre la vista ampliada de By Project
 
-### Requirement: Heatmap de actividad
-El apartado Heatmap SHALL mostrar el coste del periodo por día de la semana y hora local en una cuadrícula de 7 × 24 con intensidad proporcional al coste, y SHALL destacar la franja (día y hora) de más gasto.
-
-#### Scenario: Franja más cara
-- **WHEN** la mayor parte del gasto cae los martes a las 11:00
-- **THEN** esa celda es la más intensa y se indica «martes · 11:00» como franja de más gasto
-
 ### Requirement: Buscador rápido
 La barra superior SHALL ofrecer un buscador que se abre con Ctrl+K (o Cmd+K) o pulsándolo, y que permite saltar a un apartado, filtrar por un solo proyecto o abrir una sesión reciente, eligiendo con el teclado o el ratón. Escape SHALL cerrarlo.
 
