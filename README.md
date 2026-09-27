@@ -15,7 +15,7 @@ Reúne en una sola vista qué hacen Claude Code, Codex, Copilot, Cursor, Gemini 
 ![TypeScript](https://img.shields.io/badge/TypeScript-7-3178C6?logo=typescript&logoColor=white)
 ![Vite](https://img.shields.io/badge/Vite-8-646CFF?logo=vite&logoColor=white)
 ![SQLite](https://img.shields.io/badge/SQLite-en%20memoria-003B57?logo=sqlite&logoColor=white)
-![MCP](https://img.shields.io/badge/MCP-15%20herramientas-000000)
+![MCP](https://img.shields.io/badge/MCP-17%20herramientas-000000)
 ![CI](https://github.com/RenzoRamosDEV/AgentBoard/actions/workflows/ci.yml/badge.svg)
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 
@@ -172,7 +172,7 @@ AppImage o si solo se quiere el MCP. Registro en Claude Code:
 claude mcp add agentboard -- /usr/bin/agentboard-mcp
 ```
 
-15 herramientas (`get_summary`, `get_cost_by_model`, `get_daily`, `list_agents`…), todas con
+17 herramientas (`get_summary`, `get_cost_by_model`, `get_daily`, `get_sessions`, `get_session_detail`…), todas con
 filtro opcional de `period`, `agents` y `projects`. Es un servidor MCP estándar: sirve para
 Claude Code, Codex, Gemini, Cursor, OpenCode… Guía completa en la
 [wiki del MCP](docs/wiki/Servidor-MCP.md).

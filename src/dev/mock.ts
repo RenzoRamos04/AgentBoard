@@ -20,6 +20,59 @@ const row = (label: string, costUsd: number, calls: number, errors = 0, sessions
   key: label, label, costUsd, calls, errors, cacheHit: 0.85, hasPrice: true, sessions, overheadTokens: sessions ? 10_600 + sessions * 20 : 0,
 });
 
+const HOUR = 3_600_000;
+const sessionRows = [
+  ["s1", "claude-code", "Claude Code", "AgentBoard", "feat/v2-sesiones", "claude-opus-4-5", 0.2, 2.58, 38.62, 312, 24, 4, 486, 11],
+  ["s2", "claude-code", "Claude Code", "tuio-web", "fix/pagos", "claude-opus-4-5", 1.1, 1.86, 27.35, 240, 18, 3, 301, 6],
+  ["s3", "codex", "Codex CLI", "tuio-web", "main", "gpt-5-codex", 1.5, 0.8, 6.8, 90, 0, 0, 70, 3],
+  ["s4", "claude-code", "Claude Code", "AgentBoard", "main", "claude-sonnet-5", 2.3, 1.16, 9.44, 150, 15, 1, 180, 2],
+  ["s5", "opencode", "OpenCode", "scripts", "main", "claude-sonnet-5", 3.1, 0.37, 2.15, 40, 6, 0, 35, 0],
+  ["s6", "claude-code", "Claude Code", "infra", "chore/modulos", "claude-opus-4-5", 4.2, 3.07, 24.9, 280, 31, 4, 410, 9],
+  ["s7", "claude-code", "Claude Code", "infra", "main", "claude-haiku-4-5", 6.4, 0.23, 0.38, 20, 4, 0, 18, 0],
+  ["s8", "opencode", "OpenCode", "tuio-web", "fix/timeouts", "modelo-local", 9.0, 0.66, 0, 60, 10, 0, 50, 1],
+] as const;
+const sessions = sessionRows.map(([id, agentId, agentName, project, branch, model, daysAgo, hours, costUsd, calls, turns, compactions, toolCalls, toolErrors], i) => {
+  const startedAt = now - daysAgo * DAY - hours * HOUR;
+  return {
+    id, agentId, agentName, projectId: i + 1, project, branch, startedAt, endedAt: startedAt + hours * HOUR, model, costUsd, calls,
+    cacheHit: 0.9 + (i % 4) * 0.02, inputTokens: calls * 90_000, outputTokens: calls * 900, hasPrice: model !== "modelo-local",
+    turns, compactions, toolCalls, toolErrors, subagentCalls: i % 3 === 0 ? 12 : 0, isSubagent: false,
+  };
+});
+
+function sessionDetail(id: string) {
+  const s = sessions.find((x) => x.id === id) ?? sessions[0];
+  const n = Math.max(s.turns, 1);
+  const weights = Array.from({ length: n }, (_, i) => 1 + i * 0.12 + ((i * 7) % 5) * 0.2);
+  const total = weights.reduce((a, b) => a + b, 0);
+  const span = s.endedAt - s.startedAt;
+  const acts = ["feature", "coding", "testing", "debugging", "exploration"];
+  const turns = weights.map((w, i) => ({
+    n: i + 1, id: `${id}-t${i}`, ts: s.startedAt + (span * i) / n, activity: acts[(i * 3) % acts.length],
+    costUsd: (s.costUsd * w) / total, calls: Math.round(s.calls / n), inputTokens: 400_000 + i * 90_000, outputTokens: 6000 + i * 700,
+    tools: [["Edit", 3 + (i % 4)], ["Bash", 1 + (i % 3)], ["Read", 2]] as [string, number][], toolErrors: i % 5 === 2 ? 1 : 0,
+  }));
+  let acc = 0;
+  const timeline = turns.map((t) => ({ ts: t.ts, costUsd: (acc += t.costUsd) }));
+  const compactions = Array.from({ length: s.compactions }, (_, i) => s.startedAt + (span * (i + 1.4)) / (s.compactions + 1));
+  const byAct = new Map<string, number>();
+  for (const t of turns) byAct.set(t.activity, (byAct.get(t.activity) ?? 0) + t.costUsd);
+  return {
+    session: s, timeline, compactions, turns: s.turns ? turns : [],
+    activities: [...byAct.entries()].map(([key, costUsd]) => ({ key, costUsd, calls: 10 })).sort((a, b) => b.costUsd - a.costUsd),
+    models: [{ key: s.model, costUsd: s.costUsd * 0.9, calls: s.calls - 20 }, { key: "claude-haiku-4-5", costUsd: s.costUsd * 0.1, calls: 20 }],
+    tools: [
+      { tool: "Edit", calls: 142, errors: 0, p50Ms: 110, p95Ms: 420 },
+      { tool: "Read", calls: 118, errors: 0, p50Ms: 90, p95Ms: 300 },
+      { tool: "Bash", calls: 96, errors: 9, p50Ms: 2100, p95Ms: 38_000 },
+      { tool: "Grep", calls: 64, errors: 0, p50Ms: 200, p95Ms: 900 },
+      { tool: "mcp__agentboard__get_summary", calls: 12, errors: 0, p50Ms: 180, p95Ms: 420 },
+      { tool: "Task", calls: 6, errors: 0, p50Ms: 48_000, p95Ms: 130_000 },
+      { tool: "WebFetch", calls: 3, errors: 1, p50Ms: null, p95Ms: null },
+    ],
+  };
+}
+
 export function installMocks() {
   mockIPC((cmd, args) => {
     const a = args as Record<string, unknown>;
@@ -136,6 +189,10 @@ export function installMocks() {
           { id: 3, name: "infra", cwd: "/home/u/infra", costUsd: 9.2, calls: 700 },
           { id: 4, name: "scripts", cwd: "/home/u/scripts", costUsd: 6.3, calls: 890 },
         ];
+      case "list_sessions":
+        return { sessions, total: sessions.length };
+      case "get_session_detail":
+        return sessionDetail(String(a.id));
       case "get_data_info":
         return { firstTs: now - 42 * DAY, calls: 3792, watchedFiles: 212, lastScan: now - 60_000 };
       case "export_data":
