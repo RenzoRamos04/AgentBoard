@@ -29,11 +29,11 @@ Con la comparación activa, los KPIs de coste, sesiones y ahorro por caché SHAL
 
 #### Scenario: Coste al alza
 - **WHEN** el coste pasa de 100 USD a 118 USD
-- **THEN** el KPI de coste muestra «▲ 18 %» como desfavorable
+- **THEN** el KPI de coste muestra «▲ 18%» como desfavorable
 
 #### Scenario: Cache hit
 - **WHEN** el cache hit pasa de 97,6 % a 96,4 %
-- **THEN** el KPI muestra «▼ 1,2 pp» como desfavorable
+- **THEN** el KPI muestra «▼ 1.2 pp» como desfavorable
 
 ### Requirement: Línea del periodo anterior
 Con la comparación activa, el gráfico de gasto diario de la portada SHALL superponer el coste diario del periodo anterior como línea discontinua, alineando el día i del periodo con el día i del anterior.

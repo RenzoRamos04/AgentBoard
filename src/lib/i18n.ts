@@ -264,6 +264,13 @@ const en: Dict = {
   "Top ramas": "Top branches",
   "Top modelos": "Top models",
   "En qué se va el gasto": "Where the spend goes",
+  "Comparar con periodo anterior": "Compare with previous period",
+  "«Todo» no tiene periodo anterior": "“All time” has no previous period",
+  "frente al periodo anterior": "vs. previous period",
+  "nuevo": "new",
+  "Periodo anterior: {v}": "Previous period: {v}",
+  "por agente · línea discontinua = periodo anterior": "by agent · dashed line = previous period",
+  "vs. ant.": "vs. prev.",
 };
 
 const pt: Dict = {
@@ -489,6 +496,13 @@ const pt: Dict = {
   "Top ramas": "Principais branches",
   "Top modelos": "Principais modelos",
   "En qué se va el gasto": "Para onde vai o gasto",
+  "Comparar con periodo anterior": "Comparar com o período anterior",
+  "«Todo» no tiene periodo anterior": "“Tudo” não tem período anterior",
+  "frente al periodo anterior": "vs. período anterior",
+  "nuevo": "novo",
+  "Periodo anterior: {v}": "Período anterior: {v}",
+  "por agente · línea discontinua = periodo anterior": "por agente · linha tracejada = período anterior",
+  "vs. ant.": "vs. ant.",
 };
 
 const fr: Dict = {
@@ -714,6 +728,13 @@ const fr: Dict = {
   "Top ramas": "Principales branches",
   "Top modelos": "Principaux modèles",
   "En qué se va el gasto": "Où part la dépense",
+  "Comparar con periodo anterior": "Comparer à la période précédente",
+  "«Todo» no tiene periodo anterior": "« Tout » n'a pas de période précédente",
+  "frente al periodo anterior": "vs. période précédente",
+  "nuevo": "nouveau",
+  "Periodo anterior: {v}": "Période précédente : {v}",
+  "por agente · línea discontinua = periodo anterior": "par agent · ligne pointillée = période précédente",
+  "vs. ant.": "vs. préc.",
 };
 
 const DICTS: Record<Lang, Dict> = { es: {}, en, pt, fr };

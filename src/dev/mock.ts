@@ -23,6 +23,24 @@ const row = (label: string, costUsd: number, calls: number, errors = 0, sessions
 export function installMocks() {
   mockIPC((cmd, args) => {
     const a = args as Record<string, unknown>;
+    // Un filtro con `to` es el periodo anterior (comparación): cifras algo distintas.
+    const f = (a.filter ?? {}) as { from?: number; to?: number };
+    if (f.to != null) {
+      if (cmd === "get_summary")
+        return {
+          costUsd: 47.4, calls: 3310, sessions: 58, inputTokens: 19000, outputTokens: 1_210_000,
+          cacheRead: 160_000_000, cacheWrite: 7_100_000, cacheHit: 0.962, cacheSavingsUsd: 501.2,
+          burnRateUsdH: 0, firstTs: f.from ?? null, lastTs: f.to, unpricedModels: [],
+        };
+      if (cmd === "get_timeseries" && a.bucket === "day") {
+        const out = [];
+        for (let ts = f.from ?? f.to - 30 * DAY, i = 0; ts < f.to; ts += DAY, i++)
+          if (i % 4 !== 2) out.push({ ts, costUsd: 0.8 + ((i * 29) % 9) * 0.45, calls: 90, sessions: 2, inputTokens: 0, outputTokens: 0, cacheRead: 0, cacheWrite: 0 });
+        return out;
+      }
+      if (cmd === "get_breakdown" && (a.by === "project" || a.by === "branch"))
+        return [row("AgentBoard", 17.0, 700, 0, 10), row("tuio-web", 19.9, 1200, 0, 9), row("infra", 9.0, 650, 0, 4), row("main", 10, 400, 0, 4)];
+    }
     switch (cmd) {
       case "get_summary":
         return {
