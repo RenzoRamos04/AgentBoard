@@ -1,11 +1,12 @@
 /** Periodos del filtro, calculados en hora local. */
-export type PeriodKind = "7d" | "30d" | "60d" | "90d" | "all";
+export type PeriodKind = "today" | "7d" | "30d" | "60d" | "90d" | "all";
 
 export interface Period {
   kind: PeriodKind;
 }
 
 export const PERIODS: { kind: PeriodKind; label: string; days?: number }[] = [
+  { kind: "today", label: "Hoy", days: 1 },
   { kind: "7d", label: "7 días", days: 7 },
   { kind: "30d", label: "30 días", days: 30 },
   { kind: "60d", label: "60 días", days: 60 },

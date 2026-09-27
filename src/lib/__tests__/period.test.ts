@@ -20,8 +20,13 @@ describe("periodRange", () => {
     expect(new Date(r.from!)).toEqual(new Date(2026, 7, 27, 0, 0, 0));
   });
 
-  it("solo ofrece 7/30/60/90/todo", () => {
-    expect(PERIODS.map((p) => p.kind)).toEqual(["7d", "30d", "60d", "90d", "all"]);
+  it("ofrece hoy/7/30/60/90/todo", () => {
+    expect(PERIODS.map((p) => p.kind)).toEqual(["today", "7d", "30d", "60d", "90d", "all"]);
+  });
+
+  it('"Hoy" empieza a las 00:00 locales de hoy', () => {
+    const r = periodRange({ kind: "today" }, now);
+    expect(new Date(r.from!)).toEqual(new Date(2026, 8, 25, 0, 0, 0));
   });
 });
 
@@ -38,6 +43,12 @@ describe("previousRange", () => {
     const r = previousRange({ kind: "30d" }, now)!;
     expect(new Date(r.from)).toEqual(new Date(2026, 6, 30, 0, 0, 0));
     expect(new Date(r.to)).toEqual(new Date(2026, 7, 29, 0, 0, 0)); // exclusivo
+  });
+
+  it('el anterior de "Hoy" es ayer entero', () => {
+    const r = previousRange({ kind: "today" }, new Date(2026, 8, 27, 15, 0, 0))!;
+    expect(new Date(r.from)).toEqual(new Date(2026, 8, 26, 0, 0, 0));
+    expect(new Date(r.to)).toEqual(new Date(2026, 8, 27, 0, 0, 0));
   });
 
   it('"Todo" no tiene anterior', () => {

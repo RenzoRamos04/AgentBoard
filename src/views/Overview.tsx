@@ -118,6 +118,33 @@ function ProjectList({ data }: { data: DashboardData }) {
   );
 }
 
+/** Con el periodo «Hoy», una barra por hora (un solo día no da para un gráfico diario). */
+function TodayByHour({ data }: { data: DashboardData }) {
+  const hours = Array.from({ length: 24 }, (_, h) => ({ ts: h, value: 0, calls: 0 }));
+  for (const p of data.hourly) {
+    const h = new Date(p.ts).getHours();
+    hours[h].value += p.costUsd;
+    hours[h].calls += p.calls;
+  }
+  const points = hours.map((x) => ({
+    ...x,
+    tooltip: (
+      <>
+        <b>
+          {String(x.ts).padStart(2, "0")}:00 – {String((x.ts + 1) % 24).padStart(2, "0")}:00
+        </b>
+        <div>{fmt.usd(x.value)}</div>
+        <div className="muted">{t("{n} llamadas", { n: fmt.int(x.calls) })}</div>
+      </>
+    ),
+  }));
+  return (
+    <div className="chart-box">
+      <Columns points={points} format={fmt.usd} height={250} axis={(h) => `${String(h).padStart(2, "0")}h`} />
+    </div>
+  );
+}
+
 /** Reparto del coste por actividad, en barra al 100 %. */
 function ActivityShare({ data }: { data: DashboardData }) {
   const rows = data.activity.activities;
@@ -167,7 +194,9 @@ export function Overview({
           </h1>
           {data.prev?.filter.from != null && data.prev.filter.to != null && (
             <span className="compare-pill">
-              {t("Comparando con {a} – {b}", { a: fmt.day(data.prev.filter.from), b: fmt.day(data.prev.filter.to - 1) })}
+              {period.kind === "today"
+                ? t("Comparando con ayer ({d})", { d: fmt.day(data.prev.filter.from) })
+                : t("Comparando con {a} – {b}", { a: fmt.day(data.prev.filter.from), b: fmt.day(data.prev.filter.to - 1) })}
             </span>
           )}
         </div>
@@ -178,9 +207,15 @@ export function Overview({
       <Kpis items={summaryKpis(data, budget)} />
       {over && <div className="notice warn">{t("⚠ La proyección del mes supera el presupuesto de {b}.", { b: fmt.usd(budget!) })}</div>}
       <div className="grid-top fixed-row">
-        <Panel id="daily" title={t("Gasto diario")} question={data.prev ? t("por agente · línea discontinua = periodo anterior") : t("por agente")} onOpen={() => open("daily")} openLabel={t("Daily Activity ›")}>
-          <DailyByAgent data={data} />
-        </Panel>
+        {period.kind === "today" ? (
+          <Panel id="daily" title={t("Gasto de hoy")} question={t("por hora")} onOpen={() => open("daily")} openLabel={t("Daily Activity ›")}>
+            <TodayByHour data={data} />
+          </Panel>
+        ) : (
+          <Panel id="daily" title={t("Gasto diario")} question={data.prev ? t("por agente · línea discontinua = periodo anterior") : t("por agente")} onOpen={() => open("daily")} openLabel={t("Daily Activity ›")}>
+            <DailyByAgent data={data} />
+          </Panel>
+        )}
         <Panel id="insights" title={t("Lo que deberías saber")} question={data.insights.length ? t("{n} avisos", { n: data.insights.length }) : undefined}>
           <Insights items={data.insights} open={open} openSession={openSession} openProject={openProject} />
         </Panel>

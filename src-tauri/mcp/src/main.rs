@@ -199,12 +199,13 @@ fn filter_from(args: &Value) -> Result<queries::Filter> {
 /// Traduce un periodo a rango `[from, to)` en epoch ms (últimos N días incluido hoy, hora local).
 fn period_range(p: &str) -> Result<(Option<i64>, Option<i64>)> {
     let days = match p {
+        "today" => 1,
         "7d" => 7,
         "30d" => 30,
         "60d" => 60,
         "90d" => 90,
         "all" => return Ok((None, None)),
-        other => bail!("periodo desconocido: {other} (usa 7d, 30d, 60d, 90d o all)"),
+        other => bail!("periodo desconocido: {other} (usa today, 7d, 30d, 60d, 90d o all)"),
     };
     let now = chrono::Local::now();
     let start = now
@@ -226,7 +227,7 @@ fn filter_schema() -> Value {
     json!({
         "type": "object",
         "properties": {
-            "period": { "type": "string", "enum": ["7d", "30d", "60d", "90d", "all"], "description": "Periodo; por defecto, todo." },
+            "period": { "type": "string", "enum": ["today", "7d", "30d", "60d", "90d", "all"], "description": "Periodo: hoy (desde las 00:00 locales), últimos N días o todo; por defecto, todo." },
             "agents": { "type": "array", "items": { "type": "string" }, "description": "IDs de agente a incluir; por defecto, todos." },
             "projects": { "type": "array", "items": { "type": "integer" }, "description": "IDs de proyecto a incluir; por defecto, todos." }
         }
@@ -295,6 +296,10 @@ mod tests {
         let (from, to) = period_range("7d").unwrap();
         assert!(from.is_some() && to.is_none());
         assert!(period_range("xx").is_err());
+        // «Hoy» empieza a las 00:00 locales: como mucho, 24 h antes de ahora.
+        let (today, _) = period_range("today").unwrap();
+        let ahora = chrono::Local::now().timestamp_millis();
+        assert!(today.unwrap() <= ahora && ahora - today.unwrap() < DAY_MS);
     }
 
     #[test]
