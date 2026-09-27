@@ -75,7 +75,7 @@ function sessionDetail(id: string) {
 
 function mockSettings() {
   return {
-    theme: "system", language: "system", monthlyBudget: 60, dailyBudget: 5,
+    theme: "system", language: "system", monthlyBudget: 60, dailyBudget: 5, alertAt80: true, alertAt100: true, trayShowsToday: false,
     budgets: [{ kind: "agent", key: "codex", label: "Codex CLI", monthly: 5 }, { kind: "project", key: "AgentBoard", label: "AgentBoard", monthly: 40 }],
     priceOverrides: [{ model: "claude-haiku-4-5", input: 0.8, output: 4, cacheRead: 0.08, cacheWrite: 1, cacheWrite1h: 1.6 }],
     ...JSON.parse(localStorage.getItem("mockSettings") ?? "{}"),

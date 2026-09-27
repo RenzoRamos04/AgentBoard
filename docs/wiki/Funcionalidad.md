@@ -14,6 +14,7 @@ y su gráfico, y una vista ampliada al pulsarlo. Todo respeta los filtros activo
 | **By Agent** | Qué agente se usa más y cuánto cuesta cada uno. |
 | **By Project** | Coste por proyecto (y por rama al elegir un proyecto), con el *overhead* de contexto. |
 | **Sesiones** | Listado de sesiones (mediana y p95 de coste, búsqueda, vistas rápidas, tabla ordenable) y detalle de cada una: coste acumulado con las compactaciones, coste por actividad, turnos y latencia p50/p95 por herramienta. |
+| **Heatmap** | Coste por día de la semana y hora local (7 × 24), con la franja de más gasto, el día más activo y el reparto entre horario laboral y fin de semana. |
 | **By Activity** | Reparto por tipo de actividad: coding, testing, debugging, exploración, conversación, etc. |
 | **By Model** | Coste, cache hit y llamadas por modelo. |
 | **Tools** | Uso y porcentaje de error por herramienta nativa. |
@@ -57,6 +58,9 @@ La portada calcula avisos sobre el filtro activo, del más grave al menos:
 - **Exportar.** Las llamadas del filtro activo a CSV o JSON desde la barra superior o Ajustes.
 - **Temas e idiomas.** Tema claro, oscuro o del sistema; interfaz en español, inglés, portugués
   o francés (o el idioma del sistema).
+- **Buscador Ctrl+K.** Salta a cualquier apartado, deja solo un proyecto o abre una sesión reciente.
+- **Preferencias de avisos.** Activar o desactivar los avisos del 80 % y del 100 %, y mostrar el
+  gasto de hoy en la bandeja.
 - **Panel colapsable.** El panel lateral se pliega a solo iconos para ganar espacio.
 
 ## De dónde salen los datos
