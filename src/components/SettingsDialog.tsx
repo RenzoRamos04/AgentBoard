@@ -9,11 +9,10 @@ const THEMES: { value: Theme; label: string }[] = [
   { value: "dark", label: "Oscuro" },
 ];
 
-type Tab = "tema" | "idioma" | "presupuesto" | "exportar";
+type Tab = "tema" | "idioma" | "exportar";
 const TABS: { id: Tab; label: string }[] = [
   { id: "tema", label: "Tema" },
   { id: "idioma", label: "Idioma" },
-  { id: "presupuesto", label: "Presupuesto" },
   { id: "exportar", label: "Exportar" },
 ];
 
@@ -136,27 +135,6 @@ export function SettingsDialog({
             </div>
             <Segmented value={draft.language} options={LANGS.map((o) => ({ ...o, label: o.value === "system" ? t("Sistema") : o.label }))} onChange={(language: Language) => setDraft({ ...draft, language })} />
             <p className="muted small">{t('"Sistema" usa el idioma de tu escritorio (español, inglés, portugués o francés).')}</p>
-          </section>
-        )}
-
-        {tab === "presupuesto" && (
-          <section className="settings-section">
-            <div className="settings-intro">
-              <p className="intro-desc">{t("Fija un tope de gasto al mes para vigilar cuánto llevas gastado.")}</p>
-            </div>
-            <div className="budget-field">
-              <span className="budget-prefix">$</span>
-              <input
-                type="number"
-                min="0"
-                step="1"
-                inputMode="decimal"
-                placeholder={t("sin límite")}
-                value={draft.monthlyBudget ?? ""}
-                onChange={(e) => setDraft({ ...draft, monthlyBudget: e.target.value === "" ? null : Math.max(0, Number(e.target.value)) })}
-              />
-            </div>
-            <p className="muted small">{t("Se avisa al llegar al 80 % y al 100 % de la proyección del mes. Vacío = sin avisos.")}</p>
           </section>
         )}
 

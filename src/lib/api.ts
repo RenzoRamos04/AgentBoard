@@ -171,10 +171,41 @@ export type Theme = "system" | "light" | "dark";
 
 export type Language = "system" | "es" | "en" | "pt" | "fr";
 
+export interface ScopedBudget {
+  kind: "project" | "agent";
+  /** Raíz del repo (proyecto) o id del agente. */
+  key: string;
+  label: string;
+  monthly: number;
+}
+
+export interface PriceOverride {
+  model: string;
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  cacheWrite1h: number;
+}
+
 export interface Settings {
   theme: Theme;
   language: Language;
   monthlyBudget: number | null;
+  dailyBudget: number | null;
+  budgets: ScopedBudget[];
+  priceOverrides: PriceOverride[];
+}
+
+export type PriceSource = "default" | "edited" | "reported" | "missing";
+
+export interface PriceRow {
+  model: string;
+  /** Entrada, salida, lectura de caché, escritura 5 min y 1 h (USD por millón). */
+  prices: [number, number, number, number, number] | null;
+  source: PriceSource;
+  calls: number;
+  costUsd: number;
 }
 
 /** Minutos a sumar a UTC para obtener la hora local. */
@@ -191,6 +222,7 @@ export const api = {
   activityDaily: (filter: Filter) => invoke<ActivityDay[]>("get_activity_daily", { filter, tzOffsetMin: tzOffsetMin() }),
   agents: (filter: Filter) => invoke<AgentRow[]>("list_agents", { filter }),
   projects: (filter: Filter) => invoke<ProjectRow[]>("list_projects", { filter }),
+  prices: (filter: Filter) => invoke<PriceRow[]>("list_prices", { filter }),
   sessions: (filter: Filter, limit?: number) => invoke<SessionList>("list_sessions", { filter, limit }),
   sessionDetail: (id: string) => invoke<SessionDetail>("get_session_detail", { id }),
   dataInfo: () => invoke<DataInfo>("get_data_info"),

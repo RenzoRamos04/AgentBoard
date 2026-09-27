@@ -45,6 +45,12 @@ const PATHS: Record<SectionId, ReactElement> = {
       <rect x="3" y="14" width="18" height="6" rx="2" />
     </>
   ),
+  pricing: (
+    <>
+      <path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z" />
+      <circle cx="7.5" cy="7.5" r="1.5" />
+    </>
+  ),
   agents: (
     <>
       <circle cx="12" cy="8" r="4" />

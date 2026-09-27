@@ -11,9 +11,10 @@ export type SectionId =
   | "shell"
   | "skills"
   | "mcp"
-  | "agents";
+  | "agents"
+  | "pricing";
 
-export type SectionGroup = "coste" | "trabajo" | "herramientas";
+export type SectionGroup = "coste" | "trabajo" | "herramientas" | "configuracion";
 
 export interface Section {
   id: SectionId;
@@ -27,6 +28,7 @@ export const GROUPS: { id: SectionGroup; title: string }[] = [
   { id: "coste", title: "Coste" },
   { id: "trabajo", title: "Trabajo" },
   { id: "herramientas", title: "Herramientas" },
+  { id: "configuracion", title: "Configuración" },
 ];
 
 export const SECTIONS: Section[] = [
@@ -42,9 +44,10 @@ export const SECTIONS: Section[] = [
   { id: "skills", title: "Skills & Agents", question: "¿Qué skills y subagentes invoco?", group: "herramientas" },
   { id: "mcp", title: "MCP Servers", question: "¿Qué servidores MCP uso?", group: "herramientas" },
   { id: "agents", title: "Claude Agent Types", question: "¿Cuánto cuestan los subagentes?", group: "herramientas" },
+  { id: "pricing", title: "Precios y presupuestos", question: "¿Están bien los precios? ¿Voy dentro del presupuesto?", group: "configuracion" },
 ];
 
 export const sectionOf = (id: SectionId) => SECTIONS.find((s) => s.id === id)!;
 
-/** Apartados con vista ampliada sobre los datos del panel (el resumen y Sesiones tienen la suya). */
-export type DetailSectionId = Exclude<SectionId, "overview" | "sessions">;
+/** Apartados con vista ampliada sobre los datos del panel (resumen, Sesiones y Precios tienen la suya). */
+export type DetailSectionId = Exclude<SectionId, "overview" | "sessions" | "pricing">;

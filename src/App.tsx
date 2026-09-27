@@ -14,6 +14,7 @@ import { Overview } from "./views/Overview";
 import { Section } from "./views/Section";
 import { Sessions } from "./views/Sessions";
 import { SessionDetail } from "./views/SessionDetail";
+import { Pricing } from "./views/Pricing";
 
 /** Idioma recordado en este equipo, para pintar bien antes de leer los ajustes. */
 function storedLang(): LangSetting {
@@ -40,7 +41,7 @@ export default function App() {
   const [hiddenProjects, setHiddenProjects] = useState<Set<number>>(new Set());
   const [agents, setAgents] = useState<AgentRow[]>([]);
   const [projects, setProjects] = useState<ProjectRow[]>([]);
-  const [settings, setSettings] = useState<Settings>({ theme: storedTheme(), language: storedLang(), monthlyBudget: null });
+  const [settings, setSettings] = useState<Settings>({ theme: storedTheme(), language: storedLang(), monthlyBudget: null, dailyBudget: null, budgets: [], priceOverrides: [] });
   const lang = resolveLang(settings.language);
   setLang(lang);
   const [showSettings, setShowSettings] = useState(false);
@@ -152,6 +153,8 @@ export default function App() {
     ) : (
       <Sessions filter={filter} period={period} refresh={refresh} open={setSessionId} />
     );
+  else if (section === "pricing")
+    content = <Pricing filter={filter} refresh={refresh} settings={settings} onSave={saveSettings} agents={agents} />;
   else if (error) content = <div className="main error">{t("No se pudieron cargar los datos: {e}", { e: error })}</div>;
   else if (!data) content = <div className="main muted">{t("Cargando…")}</div>;
   else if (section === "overview")
