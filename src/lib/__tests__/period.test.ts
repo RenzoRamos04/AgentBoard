@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { periodRange, projectMonth, PERIODS } from "../period";
+import { periodRange, previousRange, projectMonth, PERIODS } from "../period";
 
 describe("periodRange", () => {
   const now = new Date(2026, 8, 25, 15, 0, 0); // 25 sep 2026, hora local
@@ -29,5 +29,18 @@ describe("projectMonth", () => {
   it("proyecta linealmente: 20 el día 10 de un mes de 30 → 60", () => {
     const day10 = new Date(2026, 8, 10, 12, 0, 0); // septiembre tiene 30 días
     expect(projectMonth(20, day10)).toBeCloseTo(60, 5);
+  });
+});
+
+describe("previousRange", () => {
+  it("30 días desde el 29 ago → del 30 jul al 28 ago incluidos", () => {
+    const now = new Date(2026, 8, 27, 10, 0, 0); // 27 sep: el periodo empieza el 29 ago
+    const r = previousRange({ kind: "30d" }, now)!;
+    expect(new Date(r.from)).toEqual(new Date(2026, 6, 30, 0, 0, 0));
+    expect(new Date(r.to)).toEqual(new Date(2026, 7, 29, 0, 0, 0)); // exclusivo
+  });
+
+  it('"Todo" no tiene anterior', () => {
+    expect(previousRange({ kind: "all" })).toBeNull();
   });
 });
