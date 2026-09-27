@@ -144,7 +144,8 @@ export function installMocks() {
       }
       case "get_timeseries_by": {
         const keys: Record<string, [string, string][]> = {
-          agent: [["claude-code", "Claude Code"], ["codex", "Codex CLI"], ["opencode", "OpenCode"]],
+          // Gemini con coste 0 (instalado, sin precio): como en una máquina real.
+          agent: [["claude-code", "Claude Code"], ["codex", "Codex CLI"], ["opencode", "OpenCode"], ["gemini", "Gemini CLI"]],
           model: [["claude-fable-5-1", "claude-fable-5-1"], ["claude-opus-5-5", "claude-opus-5-5"], ["claude-sonnet-5", "claude-sonnet-5"], ["gpt-5-codex", "gpt-5-codex"]],
           project: [["/w", "AgentBoard"], ["/t", "tuio-web"], ["/i", "infra"], ["/s", "scripts"]],
           branch: [["main", "main"], ["feat/dashboard", "feat/dashboard"]],
@@ -156,7 +157,7 @@ export function installMocks() {
           (keys[String(a.by)] ?? []).forEach(([key, label], i) => {
             if ((d + i) % 4 === 3) return;
             const w = 1 / (i + 1);
-            out.push({ ts, key, label, costUsd: a.by === "tool" ? 0 : (1 + ((d * 37) % 11) * 0.5) * w, calls: Math.round(80 * w) + (d % 3) * 5, outputTokens: Math.round(30000 * w) });
+            out.push({ ts, key, label, costUsd: a.by === "tool" || key === "gemini" ? 0 : (1 + ((d * 37) % 11) * 0.5) * w, calls: Math.round(80 * w) + (d % 3) * 5, outputTokens: Math.round(30000 * w) });
           });
         }
         return out;

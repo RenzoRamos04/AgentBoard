@@ -139,7 +139,8 @@ export function Columns({
           >
             {p.stack ? (
               <div className="column-stack">
-                {[...p.stack].reverse().map((s) => (
+                {/* Sin los segmentos de altura 0: si no, el redondeo de arriba o abajo cae en uno invisible. */}
+                {[...p.stack].reverse().filter((s) => px(s.value) > 0).map((s) => (
                   <div key={s.key} className="column-seg" style={{ height: px(s.value), background: s.color }} />
                 ))}
               </div>
