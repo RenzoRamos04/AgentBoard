@@ -412,18 +412,42 @@ pub fn turn_stats(conn: &Connection, f: &Filter) -> Result<HashMap<String, TurnS
         *t.models.entry(r.get(1)?).or_default() += r.get::<_, i64>(3)?;
     }
 
-    let (w, args) = f.sql("t.ts");
-    let mut stmt = conn.prepare(&format!(
-        "SELECT t.turn_id, t.tool, t.target, t.is_error FROM tool_calls t JOIN sessions s ON s.id = t.session_id
-         WHERE {w} AND t.turn_id IS NOT NULL"
-    ))?;
-    let mut rows = stmt.query(params_from_iter(args.iter()))?;
-    while let Some(r) = rows.next()? {
-        turns
-            .entry(r.get(0)?)
-            .or_default()
-            .tools
-            .push((r.get(1)?, r.get(2)?, r.get(3)?));
+    // Turnos referidos por llamadas del periodo pero que empezaron antes: se rescatan su
+    // fecha e intención (antes quedaban con ts 0, sin clasificar y fuera del día a día).
+    let missing: Vec<String> = turns
+        .iter()
+        .filter(|(_, t)| t.ts == 0)
+        .map(|(id, _)| id.clone())
+        .collect();
+    for chunk in missing.chunks(500) {
+        let marks = vec!["?"; chunk.len()].join(",");
+        let mut stmt = conn.prepare(&format!(
+            "SELECT id, intent, ts FROM turns WHERE id IN ({marks})"
+        ))?;
+        let mut rows = stmt.query(params_from_iter(chunk.iter()))?;
+        while let Some(r) = rows.next()? {
+            let t = turns.entry(r.get(0)?).or_default();
+            t.intent = r.get(1)?;
+            t.ts = r.get(2)?;
+        }
+    }
+
+    // Herramientas por turno (no por fecha de la herramienta): un turno que cruza el límite
+    // del periodo se clasifica con sus herramientas completas.
+    let ids: Vec<String> = turns.keys().cloned().collect();
+    for chunk in ids.chunks(500) {
+        let marks = vec!["?"; chunk.len()].join(",");
+        let mut stmt = conn.prepare(&format!(
+            "SELECT t.turn_id, t.tool, t.target, t.is_error FROM tool_calls t WHERE t.turn_id IN ({marks})"
+        ))?;
+        let mut rows = stmt.query(params_from_iter(chunk.iter()))?;
+        while let Some(r) = rows.next()? {
+            turns
+                .entry(r.get(0)?)
+                .or_default()
+                .tools
+                .push((r.get(1)?, r.get(2)?, r.get(3)?));
+        }
     }
     Ok(turns)
 }
@@ -504,7 +528,9 @@ pub struct ActivityDay {
     pub turns: i64,
 }
 
-/// Coste y turnos por día local y actividad (para el gráfico apilado).
+/// Coste y turnos por día local y actividad (para el gráfico apilado). El gasto se fecha
+/// por el día de cada llamada, así la serie suma lo mismo que la tabla aunque un turno
+/// cruce el límite del filtro o una llamada no tenga turno.
 pub fn activity_daily(
     conn: &Connection,
     f: &Filter,
@@ -512,15 +538,49 @@ pub fn activity_daily(
 ) -> Result<Vec<ActivityDay>> {
     const DAY_MS: i64 = 86_400_000;
     let off = tz_offset_min * 60_000;
+    let day_of = |ts: i64| ((ts + off) / DAY_MS) * DAY_MS - off;
+    let turns = turn_stats(conn, f)?;
     let mut acc: BTreeMap<(i64, String), (f64, i64)> = BTreeMap::new();
-    for t in turn_stats(conn, f)?.values() {
-        if t.ts == 0 {
-            continue; // llamadas sin turno registrado
+
+    let (w, args) = f.sql("c.ts");
+    let mut stmt = conn.prepare(&format!(
+        "SELECT c.turn_id, c.ts, c.cost_usd, c.activity FROM call_costs c JOIN sessions s ON s.id = c.session_id WHERE {w}"
+    ))?;
+    let mut rows = stmt.query(params_from_iter(args.iter()))?;
+    // Día de la primera llamada del periodo de cada turno (ahí se cuenta el turno).
+    let mut first_call: HashMap<String, i64> = HashMap::new();
+    while let Some(r) = rows.next()? {
+        let turn_id: Option<String> = r.get(0)?;
+        let ts: i64 = r.get(1)?;
+        let cost: f64 = r.get(2)?;
+        let activity: Option<String> = r.get(3)?;
+        let act = turn_id
+            .as_ref()
+            .and_then(|id| turns.get(id))
+            .map(|t| classify_turn(t).to_string())
+            .unwrap_or_else(|| activity.unwrap_or_else(|| "conversation".into()));
+        acc.entry((day_of(ts), act)).or_default().0 += cost;
+        if let Some(id) = turn_id {
+            let e = first_call.entry(id).or_insert(ts);
+            *e = (*e).min(ts);
         }
-        let day = ((t.ts + off) / DAY_MS) * DAY_MS - off;
-        let e = acc.entry((day, classify_turn(t).to_string())).or_default();
-        e.0 += t.cost_usd;
-        e.1 += 1;
+    }
+    // Cada turno cuenta una vez: en el día de su primera llamada o, sin llamadas, en el de
+    // su propia fecha si cae dentro del periodo.
+    for (id, t) in &turns {
+        let day = match first_call.get(id) {
+            Some(ts) => day_of(*ts),
+            None if t.ts > 0
+                && f.from.is_none_or(|from| t.ts >= from)
+                && f.to.is_none_or(|to| t.ts < to) =>
+            {
+                day_of(t.ts)
+            }
+            None => continue,
+        };
+        acc.entry((day, classify_turn(t).to_string()))
+            .or_default()
+            .1 += 1;
     }
     Ok(acc
         .into_iter()
@@ -536,6 +596,45 @@ pub fn activity_daily(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn el_dia_a_dia_conserva_el_gasto_de_turnos_que_cruzan_el_filtro() {
+        let conn = crate::db::open_in_memory().unwrap();
+        conn.execute_batch(
+            "INSERT INTO agents VALUES ('a','A','',0);
+             INSERT INTO sessions (id, agent_id, started_at, ended_at) VALUES ('s','a',500,2000);
+             INSERT INTO turns (id, session_id, ts, intent) VALUES ('t0','s',500,NULL);
+             INSERT INTO tool_calls (call_id,message_id,session_id,ts,tool,is_error,turn_id)
+               VALUES ('u0','m0','s',600,'Edit',0,'t0');
+             INSERT INTO calls (message_id,session_id,ts,model,input_tokens,output_tokens,turn_id)
+               VALUES ('m1','s',1500,'claude-sonnet-4-5',1000000,0,'t0'),
+                      ('m2','s',1600,'claude-sonnet-4-5',1000000,0,NULL);",
+        )
+        .unwrap();
+        let f = Filter {
+            from: Some(1000),
+            to: Some(2000),
+            ..Default::default()
+        };
+        let daily = activity_daily(&conn, &f, 0).unwrap();
+        // La tabla y la serie suman lo mismo (m1 + m2 = $6): antes m1 se descartaba porque
+        // su turno empezó antes del periodo.
+        let table: f64 = activity(&conn, &f)
+            .unwrap()
+            .activities
+            .iter()
+            .map(|a| a.cost_usd)
+            .sum();
+        let serie: f64 = daily.iter().map(|d| d.cost_usd).sum();
+        assert!((table - 6.0).abs() < 1e-9, "tabla: {table}");
+        assert!((serie - table).abs() < 1e-9, "serie: {serie}");
+        // El turno frontera se clasifica con sus herramientas completas (Edit → coding),
+        // aunque la herramienta quede fuera del periodo; la llamada sin turno cae aparte.
+        assert!(daily
+            .iter()
+            .any(|d| d.activity == "coding" && (d.cost_usd - 3.0).abs() < 1e-9));
+        assert_eq!(daily.iter().map(|d| d.turns).sum::<i64>(), 1);
+    }
 
     fn turn(intent: Option<&str>, tools: &[(&str, &str, bool)]) -> TurnStats {
         TurnStats {
