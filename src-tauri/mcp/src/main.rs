@@ -13,6 +13,7 @@ use chrono::TimeZone;
 use rusqlite::Connection;
 use serde_json::{json, Value};
 use std::io::{BufRead, Write};
+use std::sync::OnceLock;
 
 const PROTOCOL: &str = "2025-06-18";
 
@@ -52,9 +53,17 @@ fn main() {
 fn scan() -> Result<Connection> {
     let mut conn = db::open_in_memory()?;
     // Mismos precios que la app: los de por defecto más los que fijó el usuario en Ajustes.
-    pricing::apply_overrides(&conn, &settings::load().price_overrides)?;
+    pricing::apply_overrides(&conn, price_overrides())?;
     ingest::scan_all(&mut conn, &providers::all())?;
     Ok(conn)
+}
+
+/// Precios fijados por el usuario en Ajustes, cargados una sola vez: `get_prices` etiqueta
+/// como `edited` exactamente los mismos precios que se aplicaron a la base al arrancar.
+static PRICE_OVERRIDES: OnceLock<Vec<settings::PriceOverride>> = OnceLock::new();
+
+fn price_overrides() -> &'static [settings::PriceOverride] {
+    PRICE_OVERRIDES.get_or_init(|| settings::load().price_overrides)
 }
 
 /// Enruta un mensaje JSON-RPC. Devuelve `None` para notificaciones (sin `id`, sin respuesta).
@@ -87,7 +96,7 @@ fn initialize(req: &Value) -> Value {
         "protocolVersion": pv,
         "capabilities": { "tools": {} },
         "serverInfo": { "name": "agentboard", "version": env!("CARGO_PKG_VERSION") },
-        "instructions": "Datos de uso (coste, tokens, sesiones, actividad, herramientas, modelos, proyectos) de tus agentes de código, leídos de sus logs locales. Todas las herramientas aceptan un filtro opcional: period (7d, 30d, 60d, 90d, all), agents (ids) y projects (ids)."
+        "instructions": "Datos de uso (coste, tokens, sesiones, actividad, herramientas, modelos, precios, proyectos) de tus agentes de código, leídos de sus logs locales. Casi todas las herramientas aceptan un filtro opcional: period (today, 7d, 30d, 60d, 90d, all), agents (ids), projects (ids) y no_project (solo sesiones sin proyecto)."
     })
 }
 
@@ -140,8 +149,19 @@ fn run_tool(conn: &Connection, name: &str, args: &Value) -> Result<Value> {
             "day",
             &tz_name(),
         )?)?),
+        "get_hourly" => Ok(serde_json::to_value(queries::timeseries(
+            conn,
+            &f()?,
+            "hour",
+            &tz_name(),
+        )?)?),
         "list_agents" => Ok(serde_json::to_value(queries::list_agents(conn, &f()?)?)?),
         "list_projects" => Ok(serde_json::to_value(queries::list_projects(conn, &f()?)?)?),
+        "get_prices" => Ok(serde_json::to_value(pricing::list_prices(
+            conn,
+            &f()?,
+            price_overrides(),
+        )?)?),
         "get_data_info" => Ok(serde_json::to_value(queries::data_info(conn)?)?),
         "get_insights" => Ok(serde_json::to_value(findings::compute(
             conn,
@@ -219,12 +239,18 @@ fn filter_from(args: &Value) -> Result<queries::Filter> {
                 .collect::<Result<Vec<_>>>()?,
         ),
     };
+    let no_project = match args.get("no_project") {
+        None | Some(Value::Null) => false,
+        Some(v) => v
+            .as_bool()
+            .ok_or_else(|| anyhow!("no_project debe ser booleano"))?,
+    };
     Ok(queries::Filter {
         from,
         to,
         agents,
         projects,
-        ..Default::default()
+        no_project,
     })
 }
 
@@ -260,7 +286,8 @@ fn filter_schema() -> Value {
         "properties": {
             "period": { "type": "string", "enum": ["today", "7d", "30d", "60d", "90d", "all"], "description": "Periodo: hoy (desde las 00:00 locales), últimos N días o todo; por defecto, todo." },
             "agents": { "type": "array", "items": { "type": "string" }, "description": "IDs de agente a incluir; por defecto, todos." },
-            "projects": { "type": "array", "items": { "type": "integer" }, "description": "IDs de proyecto a incluir; por defecto, todos." }
+            "projects": { "type": "array", "items": { "type": "integer" }, "description": "IDs de proyecto a incluir; por defecto, todos." },
+            "no_project": { "type": "boolean", "description": "true = solo las sesiones sin proyecto detectado; por defecto, false (todas)." }
         }
     })
 }
@@ -280,9 +307,11 @@ fn tools_list() -> Vec<Value> {
         f("get_mcp_servers", "Servidores MCP usados y su actividad."),
         f("get_agent_types", "Subagentes de todos los agentes (Claude Code, Codex, Gemini, OpenCode, Cursor…) por agente y tipo, con llamadas y coste."),
         f("get_daily", "Serie diaria: coste, llamadas, sesiones y tokens por día."),
+        f("get_hourly", "Serie por horas (hora local): coste, llamadas, sesiones y tokens por hora; pensada para periodos cortos como today o 7d."),
         f("get_insights", "Avisos automáticos del periodo (compactaciones, modelo caro en tareas sencillas, herramientas que fallan, picos de gasto, caída del cache hit), del más grave al menos."),
         f("list_agents", "Agentes detectados en esta máquina, con su coste y carpeta de logs."),
         f("list_projects", "Proyectos detectados, con su coste."),
+        f("get_prices", "Precios por modelo (entrada, salida, lectura de caché y escritura a 5 min y 1 h, USD por millón de tokens) con su origen (default, edited, reported o missing) y su uso en el periodo: primero los usados sin precio, luego los usados y después el resto."),
         json!({ "name": "get_data_info", "description": "Rango de fechas y totales del historial cargado.", "inputSchema": { "type": "object", "properties": {} } }),
         {
             let mut schema = filter_schema();
@@ -338,11 +367,129 @@ mod tests {
     #[test]
     fn lista_todas_las_herramientas() {
         let tools = tools_list();
-        assert!(tools.len() >= 20);
+        assert!(tools.len() >= 22);
         assert!(tools.iter().any(|t| t["name"] == "get_project_detail"));
         assert!(tools.iter().any(|t| t["name"] == "get_session_detail"));
         assert!(tools.iter().any(|t| t["name"] == "get_summary"));
+        assert!(tools.iter().any(|t| t["name"] == "get_hourly"));
+        assert!(tools.iter().any(|t| t["name"] == "get_prices"));
         assert!(tools.iter().all(|t| t["inputSchema"].is_object()));
+        // El filtro común anuncia el campo no_project.
+        let resumen = tools.iter().find(|t| t["name"] == "get_summary").unwrap();
+        assert!(resumen["inputSchema"]["properties"]["no_project"].is_object());
+    }
+
+    /// Base en memoria con dos sesiones (una sin proyecto) y una llamada por sesión,
+    /// separadas tres horas dentro del mismo día local.
+    fn base_sembrada() -> Connection {
+        let conn = db::open_in_memory().unwrap();
+        let ts1 = chrono::Utc
+            .with_ymd_and_hms(2026, 1, 15, 10, 0, 0)
+            .unwrap()
+            .timestamp_millis();
+        let ts2 = ts1 + 3 * 3_600_000;
+        conn.execute_batch(&format!(
+            "INSERT INTO agents VALUES ('claude-code', 'Claude Code', '/', 0);
+             INSERT INTO projects (id, name, cwd, repo_root) VALUES (1, 'demo', '/demo', '/demo');
+             INSERT INTO sessions (id, agent_id, project_id, started_at, ended_at) VALUES
+               ('s1', 'claude-code', 1, {ts1}, {ts1}),
+               ('s2', 'claude-code', NULL, {ts2}, {ts2});
+             INSERT INTO calls (message_id, session_id, ts, model, input_tokens) VALUES
+               ('m1', 's1', {ts1}, 'claude-sonnet-4-5', 1000000),
+               ('m2', 's2', {ts2}, 'modelo-fantasma', 1000000);"
+        ))
+        .unwrap();
+        conn
+    }
+
+    /// Llama a una herramienta y devuelve su JSON (falla el test si dio error).
+    fn llama(conn: &Connection, nombre: &str, args: Value) -> Value {
+        let r = tools_call(
+            conn,
+            Some(json!(1)),
+            &json!({ "params": { "name": nombre, "arguments": args } }),
+        );
+        assert_ne!(r["result"]["isError"], true, "{nombre} falló: {r}");
+        serde_json::from_str(r["result"]["content"][0]["text"].as_str().unwrap()).unwrap()
+    }
+
+    #[test]
+    fn filtro_no_project_limita_a_sesiones_sin_proyecto() {
+        // Tipado estricto: si no es booleano, error; nunca filtro ampliado.
+        assert!(filter_from(&json!({ "no_project": "sí" })).is_err());
+        assert!(filter_from(&json!({ "no_project": 1 })).is_err());
+        assert!(!filter_from(&json!({})).unwrap().no_project);
+        assert!(
+            filter_from(&json!({ "no_project": true }))
+                .unwrap()
+                .no_project
+        );
+
+        let conn = base_sembrada();
+        assert_eq!(llama(&conn, "get_summary", json!({}))["calls"], 2);
+        let sin = llama(&conn, "get_summary", json!({ "no_project": true }));
+        assert_eq!(sin["calls"], 1);
+        assert_eq!(sin["sessions"], 1);
+        // Con false, igual que sin el campo.
+        let con = llama(&conn, "get_summary", json!({ "no_project": false }));
+        assert_eq!(con["calls"], 2);
+        // Y el tipo incorrecto llega al cliente como isError, con la conexión viva.
+        let r = tools_call(
+            &conn,
+            Some(json!(2)),
+            &json!({ "params": { "name": "get_summary", "arguments": { "no_project": "x" } } }),
+        );
+        assert_eq!(r["result"]["isError"], true);
+    }
+
+    #[test]
+    fn get_hourly_agrupa_por_horas_y_get_daily_por_dias() {
+        let conn = base_sembrada();
+        // Dos llamadas separadas tres horas: dos cubos horarios, con una llamada cada uno.
+        let horas = llama(&conn, "get_hourly", json!({}));
+        let horas = horas.as_array().unwrap();
+        assert_eq!(horas.len(), 2);
+        assert!(horas.iter().all(|p| p["calls"] == 1));
+        assert!(horas[0]["ts"].as_i64().unwrap() < horas[1]["ts"].as_i64().unwrap());
+        // A mediodía UTC caen en el mismo día local: get_daily sigue dando un solo cubo.
+        let dias = llama(&conn, "get_daily", json!({}));
+        assert_eq!(dias.as_array().unwrap().len(), 1);
+        assert_eq!(dias[0]["calls"], 2);
+        // El filtro común también aplica a la serie horaria.
+        let sin = llama(&conn, "get_hourly", json!({ "no_project": true }));
+        assert_eq!(sin.as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn get_prices_da_precio_origen_y_uso() {
+        // Sin precios del usuario: el test no depende del settings.json de la máquina.
+        let _ = PRICE_OVERRIDES.set(Vec::new());
+        let conn = base_sembrada();
+        let precios = llama(&conn, "get_prices", json!({}));
+        let filas = precios.as_array().unwrap();
+        // Primero los modelos usados sin precio, con su uso del periodo.
+        assert_eq!(filas[0]["model"], "modelo-fantasma");
+        assert_eq!(filas[0]["source"], "missing");
+        assert_eq!(filas[0]["calls"], 1);
+        assert!(filas[0]["prices"].is_null());
+        // Un modelo usado con precio por defecto: sus cinco precios y su coste.
+        let sonnet = filas
+            .iter()
+            .find(|r| r["model"] == "claude-sonnet-4-5")
+            .unwrap();
+        assert_eq!(sonnet["source"], "default");
+        assert_eq!(sonnet["calls"], 1);
+        assert_eq!(sonnet["prices"].as_array().unwrap().len(), 5);
+        assert!(sonnet["costUsd"].as_f64().unwrap() > 0.0);
+        // Respeta el filtro común: sin proyecto, el modelo con precio queda sin uso.
+        let sin = llama(&conn, "get_prices", json!({ "no_project": true }));
+        let sonnet = sin
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["model"] == "claude-sonnet-4-5")
+            .unwrap();
+        assert_eq!(sonnet["calls"], 0);
     }
 
     #[test]

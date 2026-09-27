@@ -16,6 +16,9 @@
 - [x] 3.2 `get_daily`, `get_activity`, `get_tools`, `get_shell_commands`, `get_skills`, `get_mcp_servers`, `get_agent_types`
 - [x] 3.3 `list_agents`, `list_projects`, `get_data_info`
 - [x] 3.4 Errores de herramienta controlados (argumentos/consulta) con `isError`; test de periodo inválido y herramienta desconocida
+- [x] 3.5 Filtro `no_project` (solo sesiones sin proyecto) en el filtro común, con tipado estricto; test con base en memoria
+- [x] 3.6 `get_hourly`: la misma serie temporal que `get_daily` con cubo por hora local; test de agrupación
+- [x] 3.7 `get_prices`: precios por modelo con su origen y su uso del periodo (los mismos que aplica Ajustes); test de origen y orden
 
 ## 4. Cierre
 
