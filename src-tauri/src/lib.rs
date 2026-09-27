@@ -152,13 +152,15 @@ fn build_tray(app: &tauri::AppHandle) -> tauri::Result<TrayIcon> {
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {
+            // Al pulsar el icono se abre el panel directamente, como un applet.
+            // (En appindicator el clic no llega; queda «Panel de hoy» en el menú.)
             if let tauri::tray::TrayIconEvent::Click {
                 button: tauri::tray::MouseButton::Left,
                 button_state: tauri::tray::MouseButtonState::Up,
                 ..
             } = event
             {
-                tray::show_main(tray.app_handle().clone());
+                tray::show_panel(tray.app_handle());
             }
         })
         .build(app)
