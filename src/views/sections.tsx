@@ -438,5 +438,5 @@ export const SkillsFull = ({ data }: { data: DashboardData }) => (
   <CostUsesFull rows={data.skills} header="Skill / agente" usesHeader="Usos" color="var(--series-violet)" hint="coste de las respuestas del modelo que los invocaron" othersLabel="Otras skills y agentes" />
 );
 export const AgentTypesFull = ({ data }: { data: DashboardData }) => (
-  <CostUsesFull rows={data.agentTypes} header="Tipo" usesHeader="Llamadas" color="var(--series-blue)" hint="llamadas hechas dentro de subagentes de cada agente, por tipo" othersLabel="Otros tipos" agentName={agentNamer(data)} />
+  <CostUsesFull rows={data.agentTypes} header="Tipo" usesHeader="Llamadas" color="var(--series-blue)" hint="tipo = el subagente que eligió el agente al delegar una tarea (general, explore, code-reviewer…)" othersLabel="Otros tipos" agentName={agentNamer(data)} />
 );

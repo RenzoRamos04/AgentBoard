@@ -444,6 +444,7 @@ const en: Dict = {
   "empezó {ago}": "started {ago}",
   "+{n} más": "+{n} more",
   "Aún no hay sesiones.": "No sessions yet.",
+  "tipo = el subagente que eligió el agente al delegar una tarea (general, explore, code-reviewer…)": "type = the subagent the agent picked when delegating a task (general, explore, code-reviewer…)",
 };
 
 const pt: Dict = {
@@ -849,6 +850,7 @@ const pt: Dict = {
   "empezó {ago}": "começou {ago}",
   "+{n} más": "+{n} mais",
   "Aún no hay sesiones.": "Ainda não há sessões.",
+  "tipo = el subagente que eligió el agente al delegar una tarea (general, explore, code-reviewer…)": "tipo = o subagente que o agente escolheu ao delegar uma tarefa (general, explore, code-reviewer…)",
 };
 
 const fr: Dict = {
@@ -1254,6 +1256,7 @@ const fr: Dict = {
   "empezó {ago}": "commencée {ago}",
   "+{n} más": "+{n} de plus",
   "Aún no hay sesiones.": "Pas encore de sessions.",
+  "tipo = el subagente que eligió el agente al delegar una tarea (general, explore, code-reviewer…)": "type = le sous-agent choisi par l'agent pour déléguer une tâche (general, explore, code-reviewer…)",
 };
 
 const DICTS: Record<Lang, Dict> = { es: {}, en, pt, fr };
