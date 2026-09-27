@@ -587,3 +587,14 @@ svg .grid { stroke-dasharray: 3 3; }
 .today-session-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .today-session-main .with-dot { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .today-session-go { color: var(--text-muted); }
+
+/* Panel emergente de la bandeja (ventana `panel`): lo de hoy en compacto, denso y sin cromo. */
+.tray-panel { box-sizing: border-box; min-height: 100vh; display: flex; flex-direction: column; gap: 14px; padding: 14px; background: var(--bg); border: 1px solid var(--border); overflow: hidden auto; }
+.tray-panel .today-live { flex: 0 0 auto; }
+.tray-panel-projects { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+.tray-panel-projects h2 { margin: 0; font-family: var(--font-display); font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); }
+.tray-panel-project { display: grid; grid-template-columns: minmax(0, 1fr) 84px 64px; align-items: center; gap: 8px; font-size: 12.5px; }
+.tray-panel-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tray-panel-project .num { text-align: right; }
+.tray-panel-foot { margin-top: auto; }
+.tray-panel-foot .button { width: 100%; height: var(--control-h); }

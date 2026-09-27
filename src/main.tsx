@@ -7,6 +7,7 @@ import "@fontsource/ibm-plex-sans/500.css";
 import "@fontsource/ibm-plex-sans/600.css";
 import "@fontsource/ibm-plex-mono/500.css";
 import App from "./App";
+import { TrayPanel } from "./views/TrayPanel";
 import "./styles.css";
 
 async function start() {
@@ -14,10 +15,10 @@ async function start() {
   if (import.meta.env.DEV && !("__TAURI_INTERNALS__" in window)) {
     (await import("./dev/mock")).installMocks();
   }
+  // La ventana `panel` de la bandeja carga la misma app con `?panel=1`.
+  const isPanel = new URLSearchParams(window.location.search).get("panel") === "1";
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-    <React.StrictMode>
-      <App />
-    </React.StrictMode>,
+    <React.StrictMode>{isPanel ? <TrayPanel /> : <App />}</React.StrictMode>,
   );
 }
 
