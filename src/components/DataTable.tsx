@@ -75,8 +75,19 @@ export function DataTable<T>({
 
   const template = columns.map((c) => c.width ?? (c.align === "right" ? "72px" : "1fr")).join(" ");
   const cls = (c: Column<T>, r: T) => (typeof c.className === "function" ? c.className(r) : (c.className ?? ""));
+  // Suelo de ancho por columna: por debajo, la tabla hace scroll horizontal en vez de
+  // recortar datos (mínimo declarado de cada columna; ~96 px para las flexibles).
+  const minOf = (c: Column<T>) => {
+    const w = c.width ?? "";
+    const mm = w.match(/^minmax\((\d+(?:\.\d+)?)px/);
+    if (mm) return Number(mm[1]);
+    const px = w.match(/^(\d+(?:\.\d+)?)px$/);
+    if (px) return Number(px[1]);
+    return c.align === "right" ? 72 : 96;
+  };
+  const minWidth = columns.reduce((a, c) => a + minOf(c), 0) + 8 * (columns.length - 1) + 16;
   return (
-    <div className="table" role="table">
+    <div className="table" role="table" style={{ "--table-min": `${minWidth}px` } as React.CSSProperties}>
       <div className="table-head" role="row" style={{ gridTemplateColumns: template }}>
         {columns.map((c) => (
           <span

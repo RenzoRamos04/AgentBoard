@@ -127,7 +127,7 @@ b { font-weight: 600; }
 
 .app { display: grid; grid-template-columns: auto 1fr; height: 100vh; }
 .content { position: relative; overflow: hidden; display: flex; flex-direction: column; }
-.banner { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 12px 16px 0; }
+.banner { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 12px 16px 0; flex-wrap: wrap; }
 
 /* Panel izquierdo */
 .sidebar { position: relative; width: 232px; background: var(--sidebar); border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow-y: auto; overflow-x: hidden; transition: width 0.16s ease; }
@@ -173,7 +173,7 @@ b { font-weight: 600; }
 .chip-button[aria-expanded="true"] { border-color: var(--accent-soft); }
 .ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .popover-wrap { position: relative; }
-.popover { position: absolute; z-index: 30; top: calc(100% + 6px); left: 0; min-width: 260px; max-height: 420px; display: flex; flex-direction: column; gap: 8px; padding: 8px; background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 10px 30px rgb(0 0 0 / 0.3); }
+.popover { position: absolute; z-index: 30; top: calc(100% + 6px); left: 0; min-width: min(260px, calc(100vw - 96px)); max-width: calc(100vw - 96px); max-height: 420px; display: flex; flex-direction: column; gap: 8px; padding: 8px; background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 10px 30px rgb(0 0 0 / 0.3); }
 .popover.align-right { left: auto; right: 0; }
 .popover .checklist.scroll { max-height: 320px; }
 .popover-head { display: flex; align-items: center; gap: 8px; }
@@ -230,8 +230,9 @@ b { font-weight: 600; }
 .notice { background: var(--surface-1); border: 1px dashed var(--border); border-radius: 10px; padding: 12px 16px; color: var(--text-secondary); }
 .notice.warn { border-style: solid; border-color: var(--warn); color: var(--warn); }
 
-.kpis { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 16px; }
-@media (max-width: 1400px) { .kpis:not([style]) { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+/* Tantas columnas como quepan: en ventanas estrechas las tarjetas saltan de fila solas. */
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px; }
+.kpis-compact { grid-template-columns: repeat(auto-fit, minmax(185px, 1fr)); }
 .kpi { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .kpi-label { font-size: 12px; color: var(--text-secondary); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .kpi-value { font-family: var(--font-mono); font-size: 22px; font-weight: 500; font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -277,7 +278,7 @@ b { font-weight: 600; }
 /* Barras horizontales */
 .bars { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .bars-thick { gap: 10px; }
-.bar-row { display: grid; gap: 10px; align-items: center; font-size: 12px; }
+.bar-row { display: grid; grid-template-columns: minmax(56px, var(--bar-label, 84px)) minmax(0, 1fr) auto; gap: 10px; align-items: center; font-size: 12px; }
 .bar-label { color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bar-track { height: var(--bar-h); background: var(--track); border-radius: 999px; overflow: hidden; }
 .bar-fill { height: var(--bar-h); border-radius: 999px; }
@@ -290,7 +291,7 @@ b { font-weight: 600; }
 
 /* Columnas */
 .columns { display: flex; flex-direction: column; gap: 6px; }
-.columns-max { font-size: 11px; text-align: right; }
+.columns-max { font-size: 11px; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .columns-plot { display: grid; align-items: end; gap: 3px; border-bottom: 1px solid var(--border); }
 .column { min-width: 0; width: 100%; max-width: 28px; justify-self: center; display: flex; flex-direction: column; justify-content: flex-end; gap: 1px; }
 .column-seg { width: 100%; min-height: 0; }
@@ -525,10 +526,12 @@ kbd { font-family: var(--font-mono); font-size: 10px; color: var(--text-secondar
 .agent-dots i { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
 .agent-dots span { margin-left: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .stack { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
-/* Nada se sale por la derecha: las tablas encogen dentro del panel. */
+/* Nada se sale por la derecha: las tablas encogen dentro del panel y, por debajo del suelo
+   de sus columnas (--table-min, lo pone DataTable), hacen scroll horizontal sin perder datos. */
 .main { overflow-x: hidden; }
 .panel { min-width: 0; }
-.table { min-width: 0; overflow: hidden; }
+.table { min-width: 0; overflow-x: auto; overflow-y: hidden; }
+.table-head, .table-row { min-width: var(--table-min, 0); }
 .grid-2.grid-start { grid-auto-rows: auto; align-items: start; }
 .kpi-value { font-size: clamp(16px, 1.45vw, 22px); }
 .short-label { display: none; }
@@ -598,3 +601,58 @@ svg .grid { stroke-dasharray: 3 3; }
 .tray-panel-project .num { text-align: right; }
 .tray-panel-foot { margin-top: auto; }
 .tray-panel-foot .button { width: 100%; height: var(--control-h); }
+
+/* ------------------------------------------------------------------ */
+/* Responsive: la app aguanta hasta ~600 px de ancho sin romper nada. */
+
+/* La barra superior pasa a dos filas en vez de salirse. */
+@media (max-width: 1020px) {
+  .topbar { flex-wrap: wrap; height: auto; min-height: 56px; padding: 8px 16px; row-gap: 6px; }
+  .topbar-spacer { display: none; }
+}
+@media (max-width: 700px) {
+  .topbar .segment { padding: 0 7px; font-size: 11.5px; }
+  .chip-button { padding: 0 9px; }
+  .live { display: none; }
+}
+
+/* El panel lateral se queda en iconos cuando no hay sitio. */
+@media (max-width: 940px) {
+  .sidebar, .sidebar.collapsed { width: 60px; }
+  .sidebar .brand { flex-direction: column; justify-content: center; height: auto; padding: 12px 0; gap: 8px; }
+  .sidebar h3,
+  .sidebar .nav-label,
+  .sidebar .brand-name,
+  .sidebar .brand-version,
+  .sidebar .nav-new,
+  .sidebar .foot-stats,
+  .sidebar .sidebar-toggle { display: none; }
+  .sidebar .nav-group { gap: 4px; }
+  .sidebar .nav-group + .nav-group { border-top: 1px solid var(--border); padding-top: 14px; }
+  .sidebar .nav-item, .sidebar .local-note { justify-content: center; gap: 0; padding: 0; }
+}
+
+/* Contenido más denso y rejillas a una columna. */
+@media (max-width: 860px) {
+  .main { padding: 16px 16px 24px; gap: 14px; }
+  .panel { padding: 14px; }
+  .page-head h1 { font-size: 19px; }
+  .toolbar-search { width: auto; flex: 1 1 220px; }
+  .share-list { grid-template-columns: 1fr; }
+  .grid-top.fixed-row > .panel { height: auto; min-height: 340px; }
+  .today-value { font-size: clamp(24px, 5.5vw, 30px); }
+  .session-when { margin-left: 0; flex-basis: 100%; }
+}
+
+/* Muy estrecho: ejes más cortos, formularios a una columna. */
+@media (max-width: 640px) {
+  .columns-y { grid-template-columns: 42px minmax(0, 1fr); }
+  .columns-axis.with-y { margin-left: 50px; }
+  .bar-row { grid-template-columns: minmax(56px, min(var(--bar-label, 84px), 32vw)) minmax(0, 1fr) auto; }
+  .budget-fields { grid-template-columns: 1fr; }
+  .scoped-add { grid-template-columns: 1fr; }
+  .theme-cards { gap: 8px; }
+  .dialog-settings { padding: 18px 16px 20px; }
+  .page-title-row .compare-pill { display: none; }
+  .split-table { min-width: 0; flex-basis: 100%; }
+}

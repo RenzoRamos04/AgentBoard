@@ -25,7 +25,7 @@ export function Bars({ items, color = "var(--series-1)", limit, labelWidth = 84,
         <div
           key={i.key}
           className="bar-row"
-          style={{ gridTemplateColumns: `${labelWidth}px 1fr auto` }}
+          style={{ "--bar-label": `${labelWidth}px` } as React.CSSProperties}
           onMouseMove={i.tooltip ? (e) => setTip({ x: e.clientX, y: e.clientY, content: i.tooltip }) : undefined}
           onMouseLeave={i.tooltip ? () => setTip(null) : undefined}
         >
@@ -198,8 +198,8 @@ export function LineChart({
   const [ref, width] = useWidth<HTMLDivElement>();
   const [hover, setHover] = useState<number | null>(null);
   if (!points.length) return <Empty />;
-  // Margen izquierdo para el eje de valores, con marcas «redondas».
-  const pad = { top: 12, right: 12, bottom: 4, left: 60 };
+  // Margen izquierdo para el eje de valores, con marcas «redondas» (menor si hay poco sitio).
+  const pad = { top: 12, right: 12, bottom: 4, left: width < 480 ? 46 : 60 };
   const w = Math.max(width, 100);
   const rawMax = Math.max(...points.map((p) => p.value), 1e-12);
   const step = niceStep(rawMax / 3);

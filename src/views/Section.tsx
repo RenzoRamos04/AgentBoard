@@ -112,7 +112,7 @@ export function Section({
           {title} <span className="muted">· {t(s.question)} · {periodLabel(period)}</span>
         </h1>
       </header>
-      <Kpis items={sectionKpis(id, data)} columns={3} />
+      <Kpis items={sectionKpis(id, data)} />
       {id === "daily" && <DailyFull data={data} />}
       {id === "agent" && <AgentFull data={data} />}
       {id === "project" && <ProjectFull data={data} singleProject={singleProject} />}

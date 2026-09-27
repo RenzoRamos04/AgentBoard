@@ -137,7 +137,7 @@ export function Projects({ filter, period, refresh, open }: { filter: Filter; pe
           </span>
         </h1>
       </header>
-      <Kpis items={kpis} columns={4} compact />
+      <Kpis items={kpis} compact />
       <div className="toolbar">
         <label className="search toolbar-search">
           <SearchIcon />

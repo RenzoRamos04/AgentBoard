@@ -10,9 +10,10 @@ export interface Kpi {
   delta?: Delta | null;
 }
 
-/** `compact`: etiqueta y valor en una sola línea (cifras de apoyo, como en Sesiones). */
-export const Kpis = ({ items, columns, compact = false }: { items: Kpi[]; columns?: number; compact?: boolean }) => (
-  <div className={`kpis ${compact ? "kpis-compact" : ""}`} style={columns ? { gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` } : undefined}>
+/** `compact`: etiqueta y valor en una sola línea (cifras de apoyo, como en Sesiones).
+ *  El número de columnas se adapta al ancho (auto-fit en CSS). */
+export const Kpis = ({ items, compact = false }: { items: Kpi[]; compact?: boolean }) => (
+  <div className={`kpis ${compact ? "kpis-compact" : ""}`}>
     {items.map((k) => (
       <div className="kpi" key={k.label} title={compact ? k.hint : undefined}>
         <span className="kpi-head">

@@ -278,3 +278,47 @@ export function installMocks() {
     return null;
   });
 }
+
+/**
+ * Sonda de maquetación (solo dev, con `?probe=1`): busca elementos que desbordan en
+ * horizontal sin ser scroll a propósito y pinta una chapa con el resultado, visible
+ * también en las capturas. Verde = nada roto; rojo = lista de clases culpables.
+ */
+export function installOverflowProbe() {
+  // Los errores también delatan una vista rota en las capturas.
+  window.addEventListener("error", (e) => console.log("[probe-error]", String(e.message)));
+  window.addEventListener("unhandledrejection", (e) => console.log("[probe-reject]", String(e.reason)));
+  const badge = document.createElement("div");
+  badge.id = "probe-badge";
+  badge.style.cssText =
+    "position:fixed;left:8px;bottom:8px;z-index:9999;font:11px monospace;padding:4px 8px;border-radius:6px;color:#fff;max-width:70vw;pointer-events:none;white-space:pre-wrap";
+  document.body.appendChild(badge);
+  const scrollable = (el: Element | null): boolean => {
+    for (; el && el !== document.body; el = el.parentElement) {
+      const o = getComputedStyle(el).overflowX;
+      if (o === "auto" || o === "scroll") return true;
+    }
+    return false;
+  };
+  const mark = () => {
+    const vw = document.documentElement.clientWidth;
+    const bad = new Set<string>();
+    const name = (el: Element) => (typeof el.className === "string" && el.className ? el.className.split(" ")[0] : el.tagName.toLowerCase());
+    document.querySelectorAll("body *").forEach((el) => {
+      if (el.id === "probe-badge") return;
+      const cs = getComputedStyle(el);
+      if (cs.display === "none" || cs.position === "fixed") return;
+      // Contenido recortado de verdad (overflow hidden/clip) sin puntos suspensivos: datos perdidos.
+      if (el.scrollWidth - el.clientWidth > 2 && /(hidden|clip)/.test(cs.overflowX) && cs.textOverflow !== "ellipsis") bad.add(name(el));
+      // Se sale del ancho de la ventana (y no está dentro de un scroll a propósito).
+      const r = el.getBoundingClientRect();
+      if (r.right > vw + 2 && r.width > 0 && !scrollable(el)) bad.add("↦" + name(el));
+    });
+    const list = [...bad].slice(0, 6).join(" · ");
+    badge.textContent = bad.size ? `DESBORDA (${bad.size}): ${list}` : `OK ${vw}px`;
+    badge.style.background = bad.size ? "#c43434" : "#16813f";
+  };
+  // Marca enseguida y a menudo: las capturas headless pueden llegar muy pronto.
+  mark();
+  setInterval(mark, 200);
+}
