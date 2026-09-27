@@ -10,6 +10,8 @@
   --control-h-sm: 28px;
   --control-radius: 8px;
   --control-font: 12.5px;
+  /* Alto común de todas las barras horizontales (tablas, rankings, repartos, presupuestos). */
+  --bar-h: 10px;
   --bg: #14161a;
   --sidebar: #191c21;
   --surface-1: #1d2026;
@@ -277,13 +279,12 @@ b { font-weight: 600; }
 .bars-thick { gap: 10px; }
 .bar-row { display: grid; gap: 10px; align-items: center; font-size: 12px; }
 .bar-label { color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.bar-track { height: 10px; background: var(--track); border-radius: 999px; overflow: hidden; }
-.bars-thick .bar-track, .bars-thick .bar-fill { height: 14px; }
-.bar-fill { height: 10px; border-radius: 999px; }
+.bar-track { height: var(--bar-h); background: var(--track); border-radius: 999px; overflow: hidden; }
+.bar-fill { height: var(--bar-h); border-radius: 999px; }
 .bar-row:hover .bar-fill { filter: brightness(1.12); }
 .bar-value { color: var(--text-secondary); font-size: 11.5px; min-width: 40px; text-align: right; }
 
-.inline-bar { display: block; height: 10px; background: var(--track); border-radius: 999px; overflow: hidden; }
+.inline-bar { display: block; height: var(--bar-h); background: var(--track); border-radius: 999px; overflow: hidden; }
 .inline-bar-fill { display: block; height: 100%; border-radius: 999px; }
 .table-row:hover .inline-bar-fill { filter: brightness(1.12); }
 
@@ -308,7 +309,7 @@ b { font-weight: 600; }
 
 /* Reparto (barra al 100 %) */
 .share { display: flex; flex-direction: column; gap: 12px; }
-.share-bar { display: flex; gap: 3px; height: 14px; }
+.share-bar { display: flex; gap: 3px; height: var(--bar-h); }
 .share-bar > .share-seg:first-child { border-radius: 999px 0 0 999px; }
 .share-bar > .share-seg:last-child { border-radius: 0 999px 999px 0; }
 .share-bar > .share-seg:only-child { border-radius: 999px; }
@@ -316,7 +317,6 @@ b { font-weight: 600; }
 .share-seg:hover { filter: brightness(1.15); }
 .share-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 20px; font-size: 12.5px; }
 .share-compact .share-list { grid-template-columns: 1fr; gap: 5px; font-size: 12px; }
-.share-compact .share-bar { height: 10px; }
 .share-list li { display: grid; grid-template-columns: 8px 1fr auto auto; gap: 8px; align-items: center; }
 .share-list i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
 .share-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -434,8 +434,6 @@ svg .marker text { fill: var(--critical); font-family: var(--font-mono); font-si
 .budget-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .budget-progress { display: flex; flex-direction: column; gap: 5px; flex: 1; min-width: 0; }
 .budget-progress-head { display: flex; justify-content: space-between; gap: 8px; font-size: 12.5px; }
-.budget-progress .bar-track { height: 6px; }
-.budget-progress .bar-fill { height: 6px; }
 .fill-good { background: var(--good); }
 .fill-warn { background: var(--warn); }
 .fill-critical { background: var(--critical); }
@@ -517,8 +515,8 @@ kbd { font-family: var(--font-mono); font-size: 10px; color: var(--text-secondar
 .rank-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rank-delta { width: 52px; text-align: right; font-size: 11px; }
 .rank-delta.bad { color: var(--warn); } .rank-delta.good { color: var(--good); } .rank-delta.neutral { color: var(--text-muted); }
-.rank-bar { height: 4px; margin-top: 5px; background: var(--track); border-radius: 2px; overflow: hidden; }
-.rank-bar div { height: 100%; background: var(--series-blue); border-radius: 2px; }
+.rank-bar { height: var(--bar-h); margin-top: 6px; background: var(--track); border-radius: 999px; overflow: hidden; }
+.rank-bar div { height: 100%; background: var(--series-blue); border-radius: 999px; }
 .kpis-compact .kpi { flex-direction: row; align-items: baseline; justify-content: space-between; gap: 10px; padding: 12px 14px; }
 .kpis-compact .kpi-head { flex: 1; min-width: 0; }
 .kpis-compact .kpi-value { font-size: 18px; }
