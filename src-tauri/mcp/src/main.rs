@@ -225,6 +225,7 @@ fn filter_from(args: &Value) -> Result<queries::Filter> {
         to,
         agents,
         projects,
+        ..Default::default()
     })
 }
 

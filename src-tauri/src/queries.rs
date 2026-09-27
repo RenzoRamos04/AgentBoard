@@ -17,6 +17,8 @@ pub struct Filter {
     pub agents: Option<Vec<String>>,
     /// Proyectos incluidos; `None` = todos.
     pub projects: Option<Vec<i64>>,
+    /// Solo las sesiones sin proyecto (el cubo «(sin proyecto)» del detalle).
+    pub no_project: bool,
 }
 
 impl Filter {
@@ -35,6 +37,9 @@ impl Filter {
         if let Some(agents) = &self.agents {
             conds.push(format!("s.agent_id IN ({})", placeholders(agents.len())));
             args.extend(agents.iter().cloned().map(Value::from));
+        }
+        if self.no_project {
+            conds.push("s.project_id IS NULL".to_string());
         }
         if let Some(projects) = &self.projects {
             // Un proyecto incluye todas las carpetas (worktrees) de su mismo repo.
@@ -937,8 +942,7 @@ pub fn month_progress(conn: &Connection, f: &Filter) -> Result<(f64, f64)> {
     let month = Filter {
         from: Some(start),
         to: None,
-        agents: f.agents.clone(),
-        projects: f.projects.clone(),
+        ..f.clone()
     };
     let (w, args) = month.sql("c.ts");
     let spent: f64 = conn.query_row(

@@ -657,22 +657,24 @@ pub fn project_detail(
         .find(|p| p.key == key)
         .with_context(|| format!("no hay actividad del proyecto {key} en el periodo"))?;
 
-    // Las series y desgloses usan el filtro común acotado a ese proyecto (incluye sus worktrees).
-    let (daily, activities, models, branches) = match project.project_id {
-        Some(id) => {
-            let pf = Filter {
-                projects: Some(vec![id]),
-                ..f.clone()
-            };
-            (
-                queries::timeseries(conn, &pf, "day", tz_offset_min)?,
-                crate::insights::activity(conn, &pf)?.activities,
-                queries::breakdown(conn, &pf, "model")?,
-                queries::breakdown(conn, &pf, "branch")?,
-            )
-        }
-        None => (Vec::new(), Vec::new(), Vec::new(), Vec::new()),
+    // Las series y desgloses usan el filtro común acotado a ese proyecto (incluye sus
+    // worktrees); el cubo «(sin proyecto)» se expresa con `no_project`.
+    let pf = match project.project_id {
+        Some(id) => Filter {
+            projects: Some(vec![id]),
+            ..f.clone()
+        },
+        None => Filter {
+            no_project: true,
+            ..f.clone()
+        },
     };
+    let (daily, activities, models, branches) = (
+        queries::timeseries(conn, &pf, "day", tz_offset_min)?,
+        crate::insights::activity(conn, &pf)?.activities,
+        queries::breakdown(conn, &pf, "model")?,
+        queries::breakdown(conn, &pf, "branch")?,
+    );
 
     // Latencia de herramientas de todas sus sesiones.
     let ids: Vec<Value> = sessions.iter().map(|s| Value::from(s.id.clone())).collect();
@@ -774,6 +776,25 @@ mod tests {
         );
         assert_eq!(s1.project.as_deref(), Some("web"));
         assert!(!l.sessions[0].has_price); // s3 usa un modelo sin precio
+    }
+
+    #[test]
+    fn detalle_de_sin_proyecto_con_series_y_desgloses() {
+        let conn = db::open_in_memory().unwrap();
+        seed_detail(&conn);
+        conn.execute_batch(
+            "INSERT INTO sessions (id, agent_id, started_at, ended_at) VALUES ('sn','claude-code',1000,2000);
+             INSERT INTO calls (message_id,session_id,ts,model,input_tokens,output_tokens)
+               VALUES ('mn','sn',1500,'claude-sonnet-4-5',1000000,0);",
+        )
+        .unwrap();
+        let d = project_detail(&conn, "", &Filter::default(), 0).unwrap();
+        assert!(d.project.cost_usd > 0.0);
+        assert!(!d.daily.is_empty(), "la serie diaria no puede venir vacía");
+        assert!(!d.models.is_empty(), "el desglose de modelos tampoco");
+        // Y solo con lo suyo: nada de los proyectos web/api.
+        assert!((d.project.cost_usd - 3.0).abs() < 1e-9);
+        assert!((d.daily.iter().map(|p| p.cost_usd).sum::<f64>() - 3.0).abs() < 1e-9);
     }
 
     #[test]
