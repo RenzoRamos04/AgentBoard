@@ -26,7 +26,7 @@ el binario suelto como `AgentBoard-MCP_<versión>_<sistema>`.
 
 ```bash
 # Compilar el binario
-cd src-tauri && cargo build --release --bin agentboard-mcp
+cd src-tauri && cargo build --release -p agentboard-mcp
 
 # Claude Code
 claude mcp add agentboard -- /ruta/a/agentboard-mcp

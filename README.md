@@ -211,7 +211,7 @@ Backend y servidor MCP:
 
 ```bash
 cargo test  --manifest-path src-tauri/Cargo.toml
-cargo build --manifest-path src-tauri/Cargo.toml --bin agentboard-mcp
+cargo build --manifest-path src-tauri/Cargo.toml -p agentboard-mcp
 ```
 
 Cada Pull Request compila y prueba en **Linux, Windows y macOS**. Ver [`CONTRIBUTING.md`](CONTRIBUTING.md).
