@@ -7,7 +7,7 @@
 //! Registro (ejemplo Claude Code):
 //!   claude mcp add agentboard -- /ruta/a/agentboard-mcp
 
-use agentboard_lib::{db, ingest, providers, queries};
+use agentboard_lib::{db, ingest, providers, queries, sessions};
 use anyhow::{anyhow, bail, Result};
 use chrono::{Offset, Timelike};
 use rusqlite::Connection;
@@ -133,6 +133,23 @@ fn run_tool(conn: &Connection, name: &str, args: &Value) -> Result<Value> {
         "list_agents" => Ok(serde_json::to_value(queries::list_agents(conn, &f()?)?)?),
         "list_projects" => Ok(serde_json::to_value(queries::list_projects(conn, &f()?)?)?),
         "get_data_info" => Ok(serde_json::to_value(queries::data_info(conn)?)?),
+        "get_sessions" => {
+            let limit = args["limit"].as_u64().map(|n| n as usize).unwrap_or(50);
+            Ok(serde_json::to_value(sessions::list_sessions(
+                conn,
+                &f()?,
+                Some(limit),
+            )?)?)
+        }
+        "get_session_detail" => {
+            let id = args["id"]
+                .as_str()
+                .ok_or_else(|| anyhow!("falta el argumento id"))?;
+            if !sessions::exists(conn, id)? {
+                bail!("no existe la sesión {id}");
+            }
+            Ok(serde_json::to_value(sessions::session_detail(conn, id)?)?)
+        }
         other => bail!("herramienta desconocida: {other}"),
     }
 }
@@ -214,6 +231,12 @@ fn tools_list() -> Vec<Value> {
         f("list_agents", "Agentes detectados en esta máquina, con su coste y carpeta de logs."),
         f("list_projects", "Proyectos detectados, con su coste."),
         json!({ "name": "get_data_info", "description": "Rango de fechas y totales del historial cargado.", "inputSchema": { "type": "object", "properties": {} } }),
+        {
+            let mut schema = filter_schema();
+            schema["properties"]["limit"] = json!({ "type": "integer", "minimum": 1, "maximum": 500, "description": "Máximo de sesiones (las más recientes); por defecto, 50." });
+            json!({ "name": "get_sessions", "description": "Sesiones del periodo, más recientes primero: agente, proyecto, rama, modelo principal, coste, turnos, compactaciones y errores de herramientas.", "inputSchema": schema })
+        },
+        json!({ "name": "get_session_detail", "description": "Detalle de una sesión: coste acumulado, compactaciones, turnos con su actividad y coste, modelos y latencia (p50/p95) por herramienta.", "inputSchema": { "type": "object", "properties": { "id": { "type": "string", "description": "Id de la sesión (de get_sessions)." } }, "required": ["id"] } }),
     ]
 }
 
@@ -249,7 +272,8 @@ mod tests {
     #[test]
     fn lista_todas_las_herramientas() {
         let tools = tools_list();
-        assert!(tools.len() >= 15);
+        assert!(tools.len() >= 17);
+        assert!(tools.iter().any(|t| t["name"] == "get_session_detail"));
         assert!(tools.iter().any(|t| t["name"] == "get_summary"));
         assert!(tools.iter().all(|t| t["inputSchema"].is_object()));
     }
@@ -288,6 +312,17 @@ mod tests {
             &json!({ "params": { "name": "get_summary", "arguments": { "period": "año" } } }),
         );
         assert_eq!(resp["result"]["isError"], true);
+    }
+
+    #[test]
+    fn detalle_de_sesion_inexistente_da_error_controlado() {
+        let conn = db::open_in_memory().unwrap();
+        let r = tools_call(
+            &conn,
+            Some(json!(1)),
+            &json!({ "params": { "name": "get_session_detail", "arguments": { "id": "nada" } } }),
+        );
+        assert_eq!(r["result"]["isError"], true);
     }
 
     #[test]
