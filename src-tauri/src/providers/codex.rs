@@ -397,6 +397,21 @@ impl Provider for Codex {
                 Some("item_completed") => {
                     st.has_items = true;
                     let it = &payload["item"];
+                    // Subagente arrancado: enlaza la llamada `spawn_agent` (mismo id) con su hilo.
+                    if it["type"].as_str() == Some("SubAgentActivity")
+                        && it["kind"].as_str() == Some("started")
+                    {
+                        if let (Some(call_id), Some(thread)) =
+                            (it["id"].as_str(), it["agent_thread_id"].as_str())
+                        {
+                            out.push(Record::ToolResult {
+                                call_id: call_id.to_string(),
+                                ts,
+                                is_error: false,
+                                agent_id: Some(thread.to_string()),
+                            });
+                        }
+                    }
                     if it["type"].as_str() == Some("ContextCompaction") {
                         out.push(Record::Event(EventRec {
                             session_id: st.thread_id.clone(),
@@ -450,11 +465,17 @@ impl Provider for Codex {
             Some("response_item") => match payload["type"].as_str() {
                 // Formato nuevo: las herramientas salen de `item_completed`, y `exec` es solo la
                 // envoltura del modo código (el JavaScript que llama a las herramientas reales).
+                // `spawn_agent` sí se lee siempre: el item del subagente no dice su tipo.
                 Some("function_call") | Some("custom_tool_call") | Some("local_shell_call")
-                    if !st.has_items && payload["name"].as_str() != Some("exec") =>
+                    if (!st.has_items || payload["name"].as_str() == Some("spawn_agent"))
+                        && payload["name"].as_str() != Some("exec") =>
                 {
                     let raw = payload["name"].as_str().unwrap_or("local_shell");
-                    let namespace = payload["namespace"].as_str().filter(|n| *n != "functions");
+                    // Los namespaces propios de Codex no son servidores MCP (p. ej. `spawn_agent`
+                    // viene en `collaboration`).
+                    let namespace = payload["namespace"].as_str().filter(|n| {
+                        !matches!(*n, "functions" | "collaboration" | "multi_tool_use")
+                    });
                     let tool = match namespace {
                         Some(ns) => format!("mcp__{ns}__{raw}"),
                         None => canonical_tool(raw).to_string(),
@@ -470,11 +491,12 @@ impl Provider for Codex {
                             .unwrap_or(Value::Null),
                     };
                     let detail = (tool == "Agent").then(|| {
+                        // Sin rol pedido, Codex usa su rol por defecto: `default`.
                         args["agent_type"]
                             .as_str()
+                            .or(args["agent_role"].as_str())
                             .or(args["role"].as_str())
-                            .or(args["name"].as_str())
-                            .unwrap_or("general-purpose")
+                            .unwrap_or("default")
                             .to_string()
                     });
                     let Some(call_id) = payload["call_id"].as_str().or(payload["id"].as_str())
@@ -604,6 +626,8 @@ mod tests {
             r#"{"timestamp":"2026-09-27T16:00:07.000Z","type":"event_msg","payload":{"type":"item_completed","item":{"type":"McpToolCall","id":"m1","server":"agentboard","tool":"get_summary","arguments":{},"status":"failed","error":{"message":"x"},"duration":{"secs":0,"nanos":180000000}}}}"#,
             r#"{"timestamp":"2026-09-27T16:00:08.000Z","type":"event_msg","payload":{"type":"item_completed","item":{"type":"Extension","kind":"web.search","id":"w1","query":"https://example.com","action":{"type":"openPage","url":"https://example.com"}}}}"#,
             r#"{"timestamp":"2026-09-27T16:00:09.000Z","type":"event_msg","payload":{"type":"item_completed","item":{"type":"ContextCompaction","id":"cc1"}}}"#,
+            r#"{"timestamp":"2026-09-27T16:00:10.000Z","type":"response_item","payload":{"type":"function_call","name":"spawn_agent","namespace":"collaboration","call_id":"call_sa","arguments":"{\"task_name\":\"mates_01\",\"fork_turns\":\"none\"}"}}"#,
+            r#"{"timestamp":"2026-09-27T16:00:11.000Z","type":"event_msg","payload":{"type":"item_completed","item":{"type":"SubAgentActivity","id":"call_sa","kind":"started","agent_thread_id":"hijo-1","agent_path":"/root/mates_01"}}}"#,
         ];
         let recs: Vec<Record> = lines
             .iter()
@@ -624,9 +648,13 @@ mod tests {
                 ("Write", Some("/w/b.rs")),
                 ("mcp__agentboard__get_summary", None),
                 ("WebFetch", Some("https://example.com")),
+                ("Agent", None),
             ],
             "sin la envoltura exec"
         );
+        // El subagente sin rol pedido es de tipo `default` y queda enlazado a su hilo.
+        assert!(recs.iter().any(|r| matches!(r, Record::ToolUse(t) if t.tool == "Agent" && t.detail.as_deref() == Some("default"))));
+        assert!(recs.iter().any(|r| matches!(r, Record::ToolResult { call_id, agent_id: Some(a), .. } if call_id == "call_sa" && a == "hijo-1")));
         let errors: Vec<bool> = recs
             .iter()
             .filter_map(|r| match r {
@@ -636,7 +664,7 @@ mod tests {
             .collect();
         assert_eq!(
             errors,
-            vec![true, false, false, true, false],
+            vec![true, false, false, true, false, false],
             "cargo y el MCP fallaron"
         );
         // El comando duró 2,5 s: empieza 2,5 s antes de su item.
