@@ -15,7 +15,7 @@ Reúne en una sola vista qué hacen Claude Code, Codex, Copilot, Cursor, Gemini 
 ![TypeScript](https://img.shields.io/badge/TypeScript-7-3178C6?logo=typescript&logoColor=white)
 ![Vite](https://img.shields.io/badge/Vite-8-646CFF?logo=vite&logoColor=white)
 ![SQLite](https://img.shields.io/badge/SQLite-en%20memoria-003B57?logo=sqlite&logoColor=white)
-![MCP](https://img.shields.io/badge/MCP-17%20herramientas-000000)
+![MCP](https://img.shields.io/badge/MCP-18%20herramientas-000000)
 ![CI](https://github.com/RenzoRamosDEV/AgentBoard/actions/workflows/ci.yml/badge.svg)
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 
@@ -70,12 +70,15 @@ ocurre en la máquina:
 
 ## Qué muestra
 
-Un panel lateral para organizarlo todo (apartados, periodo, agentes y proyectos), y cada
-apartado con su tabla y su gráfico.
+Un panel lateral con los apartados agrupados (Coste, Trabajo, Herramientas y Configuración), una
+barra superior con los filtros (periodo, agentes, proyectos y comparar con el periodo anterior) y
+cada apartado con su tabla y su gráfico.
 
 | | |
 |---|---|
-| 📊 | **Resumen** — coste, llamadas, sesiones, cache hit, ahorro por caché, burn rate y gasto del mes con su proyección |
+| 📊 | **Resumen** — KPIs con su variación frente al periodo anterior, gasto diario por agente, avisos «Lo que deberías saber» y top de proyectos, modelos y actividades |
+| 🧾 | **Sesiones** — cada sesión con su coste, turnos y compactaciones; su detalle con el coste acumulado, los turnos y la latencia de cada herramienta |
+| 🏷️ | **Precios y presupuestos** — precios por modelo editables (y aviso de los que faltan); presupuestos mensual, diario y por proyecto o agente |
 | 📅 | **Daily Activity** — cuánto se gasta cada día |
 | 🤖 | **By Agent** — qué agente se usa más y cuánto cuesta cada uno |
 | 📁 | **By Project** — coste por proyecto y por rama, con el *overhead* de contexto |
@@ -85,7 +88,7 @@ apartado con su tabla y su gráfico.
 | ✨ | **Skills & Agents / MCP Servers / Agent Types** — skills, subagentes y servidores MCP |
 
 Además: **en vivo** (relee los logs al vuelo con un vigilante de archivos), **bandeja del sistema**
-con el gasto del mes, **avisos de presupuesto** (80 % y 100 %), **exportar** a CSV/JSON, **temas**
+con el gasto del mes, **avisos de presupuesto** (80 % y 100 %, para cada presupuesto), **exportar** a CSV/JSON, **temas**
 claro/oscuro/sistema e **idiomas** (es, en, pt, fr).
 
 ---
@@ -172,7 +175,7 @@ AppImage o si solo se quiere el MCP. Registro en Claude Code:
 claude mcp add agentboard -- /usr/bin/agentboard-mcp
 ```
 
-17 herramientas (`get_summary`, `get_cost_by_model`, `get_daily`, `get_sessions`, `get_session_detail`…), todas con
+18 herramientas (`get_summary`, `get_cost_by_model`, `get_daily`, `get_sessions`, `get_insights`…), todas con
 filtro opcional de `period`, `agents` y `projects`. Es un servidor MCP estándar: sirve para
 Claude Code, Codex, Gemini, Cursor, OpenCode… Guía completa en la
 [wiki del MCP](docs/wiki/Servidor-MCP.md).

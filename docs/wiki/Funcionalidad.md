@@ -1,17 +1,19 @@
 # Funcionalidad
 
-AgentBoard organiza toda la actividad en un panel lateral y una serie de apartados. Cada
-apartado tiene su tabla y su gráfico, y una vista ampliada al pulsarlo. Todo respeta los
-filtros activos (periodo, agentes y proyectos).
+AgentBoard organiza toda la actividad en un panel lateral con los apartados agrupados
+(*Coste*, *Trabajo*, *Herramientas* y *Configuración*) y una barra superior con los filtros:
+periodo, agentes, proyectos y **comparar con el periodo anterior**. Cada apartado tiene su tabla
+y su gráfico, y una vista ampliada al pulsarlo. Todo respeta los filtros activos.
 
 ## Apartados
 
 | Apartado | Qué responde |
 | --- | --- |
-| **Resumen** | Coste total, llamadas, sesiones, cache hit, ahorro por caché, burn rate y gasto del mes con su proyección. |
+| **Resumen** | KPIs (coste, sesiones, cache hit, ahorro, burn rate, gasto del mes) con su variación, gasto diario por agente con la línea del periodo anterior, «Lo que deberías saber» y top de proyectos, modelos y actividades. |
 | **Daily Activity** | Cuánto se gasta cada día. |
 | **By Agent** | Qué agente se usa más y cuánto cuesta cada uno. |
 | **By Project** | Coste por proyecto (y por rama al elegir un proyecto), con el *overhead* de contexto. |
+| **Sesiones** | Listado de sesiones (mediana y p95 de coste, búsqueda, vistas rápidas, tabla ordenable) y detalle de cada una: coste acumulado con las compactaciones, coste por actividad, turnos y latencia p50/p95 por herramienta. |
 | **By Activity** | Reparto por tipo de actividad: coding, testing, debugging, exploración, conversación, etc. |
 | **By Model** | Coste, cache hit y llamadas por modelo. |
 | **Tools** | Uso y porcentaje de error por herramienta nativa. |
@@ -19,6 +21,19 @@ filtros activos (periodo, agentes y proyectos).
 | **Skills & Agents** | Skills y subagentes invocados. |
 | **MCP Servers** | Servidores MCP usados y su actividad. |
 | **Claude Agent Types** | Tipos de subagente de Claude Code y su coste. |
+| **Precios y presupuestos** | Precios por modelo editables (origen: por defecto, editado, coste del agente o falta precio) y presupuestos mensual, diario y por proyecto o agente con su progreso. |
+
+## Lo que deberías saber
+
+La portada calcula avisos sobre el filtro activo, del más grave al menos:
+
+- **Compactaciones** — sesiones con 3 o más compactaciones de contexto.
+- **Modelo caro en tareas sencillas** — turnos de exploración y conversación hechos con Opus o
+  Fable, con el ahorro estimado si se hubieran hecho con Sonnet 5.
+- **Herramienta que falla** — herramientas con 20+ usos y más de un 10 % de error (con el
+  comando de shell que más falla).
+- **Pico de gasto** — un día con más del doble de la media y por encima de media + 2σ.
+- **Caída del cache hit** — más de 3 puntos frente al periodo anterior.
 
 ## Métricas destacadas
 
@@ -34,8 +49,12 @@ filtros activos (periodo, agentes y proyectos).
   el panel se actualiza sin recargar.
 - **Bandeja del sistema.** El icono muestra el gasto del mes en el tooltip y un menú
   Mostrar / Salir; al cerrar la ventana la app sigue en segundo plano.
-- **Avisos de presupuesto.** Notificación nativa al llegar al 80 % y al 100 % de la proyección.
-- **Exportar.** Las llamadas del filtro activo a CSV o JSON desde Ajustes.
+- **Avisos de presupuesto.** Notificación nativa al llegar al 80 % y al 100 % de cada
+  presupuesto: mensual y por proyecto o agente (sobre la proyección del mes) y diario (sobre el
+  gasto de hoy).
+- **Precios propios.** Los precios editados se guardan en `settings.json` y recalculan todos los
+  costes al momento, en la app y en el servidor MCP.
+- **Exportar.** Las llamadas del filtro activo a CSV o JSON desde la barra superior o Ajustes.
 - **Temas e idiomas.** Tema claro, oscuro o del sistema; interfaz en español, inglés, portugués
   o francés (o el idioma del sistema).
 - **Panel colapsable.** El panel lateral se pliega a solo iconos para ganar espacio.

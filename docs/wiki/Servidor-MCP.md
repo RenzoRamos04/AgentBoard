@@ -55,6 +55,7 @@ Todas aceptan un filtro opcional: `period` (`7d`, `30d`, `60d`, `90d`, `all`), `
 | `list_agents` / `list_projects` | Detectados en la máquina, con su coste. |
 | `get_data_info` | Rango de fechas y totales del historial. |
 | `get_sessions` | Sesiones del periodo (más recientes primero) con agente, proyecto, rama, modelo principal, coste, turnos, compactaciones y errores. Acepta `limit` (1–500, por defecto 50). |
+| `get_insights` | Avisos del periodo (compactaciones, modelo caro en tareas sencillas, herramientas que fallan, picos de gasto, caída del cache hit), del más grave al menos, con su texto. |
 | `get_session_detail` | Detalle de una sesión por `id`: coste acumulado, compactaciones, turnos con su actividad, modelos y latencia p50/p95 por herramienta. |
 
 Si una herramienta recibe argumentos inválidos, el servidor devuelve un error legible sin cerrar
