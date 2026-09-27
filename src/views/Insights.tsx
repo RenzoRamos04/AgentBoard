@@ -150,15 +150,15 @@ export function describe(i: Insight): Described {
       return {
         title: t("Ritmo alto: {now}/h", { now: fmt.usd(num(p.now)) }),
         body: t("{times}× tu media por hora activa ({avg}/h).", { times: num(p.times).toFixed(1), avg: fmt.usd(num(p.avg)) }),
-        cta: t("Ver Heatmap"),
-        section: "heatmap",
+        cta: t("Ver Daily Activity"),
+        section: "daily",
       };
     case "after_hours":
       return {
         title: t("El {share} del gasto es fuera de horario", { share: fmt.pct(num(p.share)) }),
         body: t("{cost} antes de las 9 o desde las 19 h (hora local).", { cost: fmt.usd(num(p.cost)) }),
-        cta: t("Ver Heatmap"),
-        section: "heatmap",
+        cta: t("Ver Daily Activity"),
+        section: "daily",
       };
     case "session_cost_up":
       return {

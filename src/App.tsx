@@ -16,7 +16,6 @@ import { Projects } from "./views/Projects";
 import { ProjectDetail } from "./views/ProjectDetail";
 import { SessionDetail } from "./views/SessionDetail";
 import { Pricing } from "./views/Pricing";
-import { Heatmap } from "./views/Heatmap";
 import { CommandPalette } from "./components/CommandPalette";
 
 /** Idioma recordado en este equipo, para pintar bien antes de leer los ajustes. */
@@ -197,7 +196,6 @@ export default function App() {
     content = <Pricing filter={filter} refresh={refresh} settings={settings} onSave={saveSettings} agents={agents} />;
   else if (error) content = <div className="main error">{t("No se pudieron cargar los datos: {e}", { e: error })}</div>;
   else if (!data) content = <div className="main muted">{t("Cargando…")}</div>;
-  else if (section === "heatmap") content = <Heatmap data={data} period={period} />;
   else if (section === "overview")
     content = <Overview data={data} period={period} budget={settings.monthlyBudget} singleProject={singleProject} open={setSection} openSession={openSession} openProject={openProject} />;
   else if (!SECTIONS.some((x) => x.id === section))

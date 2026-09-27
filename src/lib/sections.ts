@@ -6,7 +6,6 @@ export type SectionId =
   | "project"
   | "projects"
   | "activity"
-  | "heatmap"
   | "model"
   | "tools"
   | "shell"
@@ -44,7 +43,6 @@ export const SECTIONS: Section[] = [
   { id: "model", title: "By Model", question: "¿Uso el modelo adecuado?", group: "coste" },
   { id: "projects", title: "Proyectos", question: "¿Qué proyecto se lleva el gasto y por qué?", group: "trabajo", isNew: true },
   { id: "activity", title: "By Activity", question: "¿En qué se va el gasto?", group: "trabajo" },
-  { id: "heatmap", title: "Heatmap", question: "¿Cuándo trabajo con agentes?", group: "trabajo", isNew: true },
   { id: "tools", title: "Tools", question: "¿Qué herramientas usa y dónde fallan?", group: "herramientas" },
   { id: "shell", title: "Shell Commands", question: "¿Qué comandos ejecuta?", group: "herramientas" },
   { id: "skills", title: "Skills & Agents", question: "¿Qué skills y subagentes invoco?", group: "herramientas" },
@@ -55,5 +53,5 @@ export const SECTIONS: Section[] = [
 
 export const sectionOf = (id: SectionId) => SECTIONS.find((s) => s.id === id)!;
 
-/** Apartados con vista ampliada sobre los datos del panel (resumen, Proyectos, Heatmap y Precios tienen la suya). */
-export type DetailSectionId = Exclude<SectionId, "overview" | "projects" | "pricing" | "heatmap">;
+/** Apartados con vista ampliada sobre los datos del panel (resumen, Proyectos y Precios tienen la suya). */
+export type DetailSectionId = Exclude<SectionId, "overview" | "projects" | "pricing">;

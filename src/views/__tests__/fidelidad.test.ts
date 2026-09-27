@@ -1,21 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { heatGrid, weekday } from "../Heatmap";
 import { afterCompaction } from "../SessionDetail";
 import { parsePriceFile } from "../Pricing";
 import { filterItems } from "../../components/CommandPalette";
 
-describe("heatGrid", () => {
-  it("suma por día de la semana y hora y encuentra la franja más cara", () => {
-    const tue11 = new Date(2026, 8, 22, 11).getTime(); // martes
-    const { grid, peak } = heatGrid([
-      { ts: tue11, costUsd: 5, calls: 3, sessions: 1, inputTokens: 0, outputTokens: 0, cacheRead: 0, cacheWrite: 0 },
-      { ts: tue11 + 7 * 864e5, costUsd: 2, calls: 1, sessions: 1, inputTokens: 0, outputTokens: 0, cacheRead: 0, cacheWrite: 0 },
-    ]);
-    expect(weekday(tue11)).toBe(1);
-    expect(grid[1][11].cost).toBe(7);
-    expect(peak).toEqual({ day: 1, hour: 11, cost: 7 });
-  });
-});
 
 describe("afterCompaction", () => {
   it("compara el coste por turno antes y después de la 3.ª compactación", () => {
@@ -65,30 +52,5 @@ describe("tickFormat", () => {
     expect([0, 2.5, 250, 1500, 15000].map(usd)).toEqual(["$0", "$2.50", "$250", "$1.5K", "$15K"]);
     const n = tickFormat(f2.int);
     expect([500, 15000].map(n)).toEqual(["500", "15K"]);
-  });
-});
-
-import { level } from "../Heatmap";
-describe("level", () => {
-  it("5 niveles de intensidad y 0 sin gasto", () => {
-    expect([0, 0.5, 2, 5, 8, 10].map((v) => level(v, 10))).toEqual([0, 1, 1, 3, 4, 5]);
-    expect(level(3, 0)).toBe(0);
-  });
-});
-
-import { monthCalendars } from "../Heatmap";
-describe("monthCalendars", () => {
-  it("un calendario por mes del periodo, con huecos hasta el lunes y el coste de cada día", () => {
-    const now = new Date(2026, 8, 27, 12); // 27 sep 2026
-    const from = new Date(2026, 7, 29).getTime(); // 29 ago
-    const p = (d: Date, costUsd: number) => ({ ts: d.getTime(), costUsd, calls: 1, sessions: 1, inputTokens: 0, outputTokens: 0, cacheRead: 0, cacheWrite: 0 });
-    const ms = monthCalendars([p(new Date(2026, 8, 25), 233.4)], { from }, now);
-    expect(ms.map((m) => m.month)).toEqual([7, 8]); // agosto y septiembre
-    expect(ms[0].offset).toBe(5); // 1 ago 2026 fue sábado
-    expect(ms[0].days[27].inPeriod).toBe(false); // 28 ago
-    expect(ms[0].days[28].inPeriod).toBe(true); // 29 ago
-    expect(ms[1].days[24].cost).toBe(233.4);
-    expect(ms[1].days[26].today).toBe(true);
-    expect(ms[1].days[27].inPeriod).toBe(false); // 28 sep, futuro
   });
 });
