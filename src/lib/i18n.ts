@@ -440,6 +440,10 @@ const en: Dict = {
   "Última sesión · {ago}": "Last session · {ago}",
   "Ver la sesión ›": "See the session ›",
   "Aún no hay sesiones hoy.": "No sessions today yet.",
+  "{n} activas ahora": "{n} active now",
+  "empezó {ago}": "started {ago}",
+  "+{n} más": "+{n} more",
+  "Aún no hay sesiones.": "No sessions yet.",
 };
 
 const pt: Dict = {
@@ -841,6 +845,10 @@ const pt: Dict = {
   "Última sesión · {ago}": "Última sessão · {ago}",
   "Ver la sesión ›": "Ver a sessão ›",
   "Aún no hay sesiones hoy.": "Ainda não há sessões hoje.",
+  "{n} activas ahora": "{n} ativas agora",
+  "empezó {ago}": "começou {ago}",
+  "+{n} más": "+{n} mais",
+  "Aún no hay sesiones.": "Ainda não há sessões.",
 };
 
 const fr: Dict = {
@@ -1242,6 +1250,10 @@ const fr: Dict = {
   "Última sesión · {ago}": "Dernière session · {ago}",
   "Ver la sesión ›": "Voir la session ›",
   "Aún no hay sesiones hoy.": "Pas encore de session aujourd'hui.",
+  "{n} activas ahora": "{n} actives maintenant",
+  "empezó {ago}": "commencée {ago}",
+  "+{n} más": "+{n} de plus",
+  "Aún no hay sesiones.": "Pas encore de sessions.",
 };
 
 const DICTS: Record<Lang, Dict> = { es: {}, en, pt, fr };

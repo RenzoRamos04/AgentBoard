@@ -22,7 +22,7 @@ const row = (label: string, costUsd: number, calls: number, errors = 0, sessions
 
 const HOUR = 3_600_000;
 const sessionRows = [
-  ["s1", "claude-code", "Claude Code", "AgentBoard", "feat/v2-sesiones", "claude-opus-4-5", 0.2, 2.58, 38.62, 312, 24, 4, 486, 11],
+  ["s1", "claude-code", "Claude Code", "AgentBoard", "feat/v2-sesiones", "claude-opus-4-5", 0, 6.9, 38.62, 312, 24, 4, 486, 11],
   ["s2", "claude-code", "Claude Code", "tuio-web", "fix/pagos", "claude-opus-4-5", 1.1, 1.86, 27.35, 240, 18, 3, 301, 6],
   ["s3", "codex", "Codex CLI", "tuio-web", "main", "gpt-5-codex", 1.5, 0.8, 6.8, 90, 0, 0, 70, 3],
   ["s4", "claude-code", "Claude Code", "AgentBoard", "main", "claude-sonnet-5", 2.3, 1.16, 9.44, 150, 15, 1, 180, 2],
@@ -31,14 +31,17 @@ const sessionRows = [
   ["s7", "claude-code", "Claude Code", "infra", "main", "claude-haiku-4-5", 6.4, 0.23, 0.38, 20, 4, 0, 18, 0],
   ["s8", "opencode", "OpenCode", "tuio-web", "fix/timeouts", "modelo-local", 9.0, 0.66, 0, 60, 10, 0, 50, 1],
 ] as const;
-const sessions = sessionRows.map(([id, agentId, agentName, project, branch, model, daysAgo, hours, costUsd, calls, turns, compactions, toolCalls, toolErrors], i) => {
+const sessions = [
+  { id: "live-codex", agentId: "codex", agentName: "Codex CLI", projectId: 1, project: "AgentBoard", branch: "feat/v2", startedAt: now - 60_000, endedAt: now - 20_000, model: "gpt-5-codex", costUsd: 0.12, calls: 3, cacheHit: 0.8, inputTokens: 90_000, outputTokens: 900, hasPrice: true, turns: 1, compactions: 0, toolCalls: 2, toolErrors: 0, subagentCalls: 0, isSubagent: false, projectKey: "/AgentBoard" },
+  ...sessionRows.map(([id, agentId, agentName, project, branch, model, daysAgo, hours, costUsd, calls, turns, compactions, toolCalls, toolErrors], i) => {
   const startedAt = now - daysAgo * DAY - hours * HOUR;
   return {
     id, agentId, agentName, projectId: i + 1, project, branch, startedAt, endedAt: startedAt + hours * HOUR, model, costUsd, calls,
     cacheHit: 0.9 + (i % 4) * 0.02, inputTokens: calls * 90_000, outputTokens: calls * 900, hasPrice: model !== "modelo-local",
     turns, compactions, toolCalls, toolErrors, subagentCalls: i % 3 === 0 ? 12 : 0, isSubagent: false, projectKey: `/${project}`,
   };
-});
+}),
+];
 
 function mockProjects() {
   const by = new Map<string, typeof sessions>();
