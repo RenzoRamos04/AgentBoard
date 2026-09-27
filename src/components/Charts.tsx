@@ -384,7 +384,9 @@ export function ShareBar({ segments, format, limit = 8, compact = false, othersL
           <div
             key={s.key}
             className="share-seg"
-            style={{ flexGrow: s.value, background: s.color }}
+            // Crece según su % del total: con valores absolutos que suman < 1 (p. ej. $0.29),
+            // flex solo repartiría esa fracción del ancho y la barra quedaría corta.
+            style={{ flexGrow: (s.value / total) * 100, background: s.color }}
             onMouseMove={(e) =>
               setTip({
                 x: e.clientX,

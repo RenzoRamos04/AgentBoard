@@ -169,7 +169,8 @@ export function installMocks() {
           // Clave = raíz del repo, como en el núcleo (y en la serie diaria por proyecto).
           case "project": return [{ ...row("AgentBoard", 22.1, 900, 0, 12), key: "/w" }, { ...row("tuio-web", 18.4, 1300, 0, 9), key: "/t" }, { ...row("infra", 9.2, 700, 0, 4), key: "/i" }, { ...row("scripts", 6.3, 890, 0, 3), key: "/s" }];
           case "branch": return [row("main", 12.0, 500, 0, 5), row("feat/dashboard", 8.1, 300, 0, 3), row("fix/ingesta", 2.0, 100, 0, 1)];
-          case "skill": return [row("general-purpose", 1.32, 5), row("code-reviewer", 0.541, 3), row("dataviz", 0.211, 1)];
+          // Importes pequeños (suman < $1), como en una máquina real.
+          case "skill": return [row("claude-in-chrome", 0.15, 2), row("claude-api", 0.07, 1), row("dataviz", 0.05, 1), row("anthropic-skills:docs", 0.02, 1)];
           case "mcp": return [row("figma", 0, 23), row("claude_ai_Slack", 0, 5), row("claude_ai_Supabase", 0, 1)];
           case "agent_type": return [
             { ...row("general-purpose", 100.4, 1652), key: "claude-code:general-purpose", agent: "claude-code" },
