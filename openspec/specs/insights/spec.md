@@ -47,13 +47,6 @@ Si el filtro tiene inicio, el sistema SHALL comparar el cache hit con el del per
 - **WHEN** el cache hit pasa de 96 % a 91 %
 - **THEN** hay un aviso de caída de 5 puntos
 
-### Requirement: Tarjeta en la portada
-La portada SHALL mostrar los avisos en una tarjeta «Lo que deberías saber» junto al gasto diario, cada uno con un enlace a la vista donde investigarlo; sin avisos SHALL indicar que no hay nada destacable.
-
-#### Scenario: Ir a las sesiones
-- **WHEN** el usuario pulsa el enlace del aviso de compactaciones
-- **THEN** se abre el apartado Sesiones
-
 ### Requirement: Avisos por MCP
 El servidor MCP SHALL ofrecer `get_insights` con el filtro común.
 
@@ -109,10 +102,3 @@ Con periodo anterior con datos, el sistema SHALL avisar (`warn`) si el coste med
 #### Scenario: La caché compensa
 - **WHEN** el coste es 56 USD y el ahorro por caché 612 USD
 - **THEN** hay un aviso positivo de que la caché ahorró 10,9 veces lo gastado
-
-### Requirement: Tarjeta con muchos avisos
-La tarjeta de la portada SHALL mostrar los cinco primeros avisos y un botón para ver todos; cada aviso SHALL enlazar a su vista (proyecto, sesión, modelo, comando, servidor, precios o actividad).
-
-#### Scenario: Ver todos
-- **WHEN** hay 9 avisos y el usuario pulsa «Ver los 9 avisos»
-- **THEN** la tarjeta muestra los nueve

@@ -82,3 +82,18 @@ En cada fila de KPIs, las etiquetas SHALL ocupar una sola línea y los valores S
 #### Scenario: Ventana estrecha
 - **WHEN** la ventana mide 1280 px
 - **THEN** los KPIs del resumen se ven en dos filas de tres con las etiquetas completas
+
+### Requirement: Hoy en directo
+La portada SHALL mostrar junto al gasto diario una tarjeta «Hoy en directo», independiente del periodo elegido pero con los filtros de agentes y proyectos, con: el gasto de hoy desde las 00:00 locales y su variación frente a ayer hasta la misma hora; el coste de los últimos 60 minutos (USD/h); el gasto por hora de hoy; y la sesión activa (con llamadas en los últimos 15 minutos) o, si no hay, la última sesión de hoy, con enlace a su detalle. La tarjeta SHALL actualizarse con cada relectura de los logs.
+
+#### Scenario: Comparación justa con ayer
+- **WHEN** a las 14:00 el gasto de hoy es 40 USD y ayer hasta las 14:00 fue 30 USD
+- **THEN** la tarjeta muestra «▲ 33%» frente a ayer
+
+#### Scenario: Sesión activa
+- **WHEN** una sesión de Claude Code tuvo una llamada hace 3 minutos
+- **THEN** la tarjeta la muestra como activa ahora, con enlace a su detalle
+
+#### Scenario: Sin actividad hoy
+- **WHEN** no hay llamadas hoy
+- **THEN** la tarjeta muestra 0 USD y que aún no hay sesiones hoy
