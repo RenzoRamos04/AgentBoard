@@ -43,11 +43,17 @@ function ago(ms: number) {
 export function TodayLive({ filter, refresh, openSession }: { filter: Filter; refresh: number; openSession: (id: string) => void }) {
   const [live, setLive] = useState<Live | null>(null);
   const [now, setNow] = useState(Date.now());
+  // Recarga periódica: sin datos nuevos también caducan «Activa ahora», el ritmo de la
+  // última hora y el día al cruzar la medianoche.
+  const [tick, setTick] = useState(0);
   // Solo agentes y proyectos: el periodo de la barra no afecta a esta tarjeta.
   const scope = { agents: filter.agents, projects: filter.projects };
 
   useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 30_000);
+    const id = setInterval(() => {
+      setNow(Date.now());
+      setTick((n) => n + 1);
+    }, 30_000);
     return () => clearInterval(id);
   }, []);
 
@@ -73,7 +79,7 @@ export function TodayLive({ filter, refresh, openSession }: { filter: Filter; re
     return () => {
       alive = false;
     };
-  }, [filter.agents?.join(","), filter.projects?.join(","), refresh]);
+  }, [filter.agents?.join(","), filter.projects?.join(","), refresh, tick]);
 
   if (!live) return <p className="empty">{t("Cargando…")}</p>;
 
@@ -81,6 +87,8 @@ export function TodayLive({ filter, refresh, openSession }: { filter: Filter; re
   const byHour = Array.from({ length: 24 }, (_, h) => ({ ts: h, value: 0 }));
   for (const p of live.hours) byHour[new Date(p.ts).getHours()].value += p.costUsd;
   const l = live.last;
+  // La actividad caduca con el reloj, no con la última carga.
+  const isActive = !!l && now - l.session.endedAt < ACTIVE_MS;
 
   return (
     <div className="today-live">
@@ -99,12 +107,12 @@ export function TodayLive({ filter, refresh, openSession }: { filter: Filter; re
       <div className="today-chart">
         <Columns points={byHour} format={fmt.usd} height={120} yAxis={false} axis={(h) => `${String(h).padStart(2, "0")}h`} />
       </div>
-      <div className={`today-session ${l?.active ? "active" : ""}`}>
+      <div className={`today-session ${isActive ? "active" : ""}`}>
         {l ? (
           <>
             <div className="today-session-head">
-              <span className={`status-dot ${l.active ? "on" : ""}`} />
-              <span>{l.active ? t("Activa ahora") : t("Última sesión · {ago}", { ago: ago(now - l.session.endedAt) })}</span>
+              <span className={`status-dot ${isActive ? "on" : ""}`} />
+              <span>{isActive ? t("Activa ahora") : t("Última sesión · {ago}", { ago: ago(now - l.session.endedAt) })}</span>
             </div>
             <button className="today-session-row" onClick={() => openSession(l.session.id)} title={l.session.model ? `${modelName(l.session.model)} · ${t("Ver la sesión ›")}` : t("Ver la sesión ›")}>
               <span className="today-session-main">
