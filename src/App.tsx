@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { api, type AgentRow, type Filter, type ProjectRow, type Settings } from "./lib/api";
-import { periodRange, type Period } from "./lib/period";
+import { periodRange, previousRange, type Period } from "./lib/period";
 import { applyTheme, storedTheme } from "./lib/theme";
 import { LangContext, resolveLang, setLang, t, type LangSetting } from "./lib/i18n";
 import type { SectionId } from "./lib/sections";
@@ -42,6 +42,21 @@ export default function App() {
   const [lastScan, setLastScan] = useState<number | null>(null);
 
   const range = useMemo(() => periodRange(period), [period, refresh]);
+  const [compare, setCompareState] = useState(() => {
+    try {
+      return localStorage.getItem("agentboard.compare") !== "0";
+    } catch {
+      return true;
+    }
+  });
+  const setCompare = (v: boolean) => {
+    setCompareState(v);
+    try {
+      localStorage.setItem("agentboard.compare", v ? "1" : "0");
+    } catch {
+      // sin almacenamiento: vale para esta sesión
+    }
+  };
 
   const filter: Filter = useMemo(
     () => ({
@@ -99,7 +114,12 @@ export default function App() {
 
   const visibleProjects = projects.filter((p) => !hiddenProjects.has(p.id));
   const singleProject = hiddenProjects.size && visibleProjects.length === 1 ? visibleProjects[0].name : null;
-  const { data, error } = useDashboardData(filter, singleProject, refresh);
+  // Mismo filtro de agentes y proyectos sobre el periodo anterior (no hay con «Todo»).
+  const prevFilter: Filter | null = useMemo(() => {
+    const prev = compare ? previousRange(period) : null;
+    return prev ? { ...filter, ...prev } : null;
+  }, [compare, period, filter]);
+  const { data, error } = useDashboardData(filter, singleProject, refresh, prevFilter);
   const saveSettings = async (s: Settings) => setSettings(await api.saveSettings(s));
 
   const doExport = async (format: "csv" | "json") => {
@@ -149,6 +169,9 @@ export default function App() {
             onlyProject={onlyProject}
             lastScan={lastScan}
             flash={live}
+            compare={compare}
+            setCompare={setCompare}
+            canCompare={previousRange(period) != null}
             onExport={doExport}
           />
           {content}

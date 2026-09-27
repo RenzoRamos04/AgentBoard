@@ -21,6 +21,10 @@ interface Props {
   /** `true` justo después de una relectura en vivo. */
   flash: boolean;
   onExport: (format: "csv" | "json") => void;
+  compare: boolean;
+  setCompare: (v: boolean) => void;
+  /** `false` con «Todo», que no tiene periodo anterior. */
+  canCompare: boolean;
 }
 
 /** «hace 12 s», «hace 3 min»… a partir de la hora de la última relectura. */
@@ -121,6 +125,19 @@ export function Topbar(p: Props) {
           {!projects.length && <li className="muted small">{t("Sin proyectos")}</li>}
         </ul>
       </Popover>
+
+      <button
+        type="button"
+        className="chip-button"
+        role="switch"
+        aria-checked={p.compare && p.canCompare}
+        disabled={!p.canCompare}
+        title={p.canCompare ? undefined : t("«Todo» no tiene periodo anterior")}
+        onClick={() => p.setCompare(!p.compare)}
+      >
+        <span className={`switch ${p.compare && p.canCompare ? "on" : ""}`} aria-hidden />
+        <span>{t("Comparar con periodo anterior")}</span>
+      </button>
 
       <div className="topbar-spacer" />
 
