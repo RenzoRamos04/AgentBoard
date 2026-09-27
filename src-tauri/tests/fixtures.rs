@@ -232,9 +232,9 @@ fn opencode_fixture() {
         ("explore", Some("opencode"), 1)
     );
 
-    // Segunda pasada sin cambios: no se procesa nada ni se duplica.
+    // Segunda pasada sin cambios: solo se relee la ventana de solapamiento y no se duplica nada.
     let again = ingest::scan_all(&mut conn, &providers).unwrap();
-    assert_eq!(again.records, 0);
+    assert_eq!(again.errors, 0);
     assert_eq!(queries::summary(&conn, &f, 0).unwrap().calls, 3);
 }
 
@@ -592,4 +592,45 @@ fn relectura_en_dos_pasadas_de_agentes_con_estado() {
     read_in_two_passes("copilot", "session-state", |r| {
         Box::new(Copilot::with_roots(r))
     });
+}
+
+#[test]
+fn opencode_no_pierde_filas_con_el_mismo_time_updated_que_el_cursor() {
+    use agentboard_lib::providers::opencode::OpenCode;
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("opencode");
+    std::fs::create_dir_all(&root).unwrap();
+    let db_path = root.join("opencode.db");
+    let sql = std::fs::read_to_string(fixtures("opencode").join("opencode.sql")).unwrap();
+    let oc = rusqlite::Connection::open(&db_path).unwrap();
+    oc.execute_batch(&sql).unwrap();
+
+    let providers: Vec<Box<dyn Provider>> =
+        vec![Box::new(OpenCode::with_roots(vec![root.clone()]))];
+    let mut conn = db::open_in_memory().unwrap();
+    ingest::scan_all(&mut conn, &providers).unwrap();
+    let calls = |c: &rusqlite::Connection| -> i64 {
+        c.query_row("SELECT COUNT(*) FROM calls", [], |r| r.get(0))
+            .unwrap()
+    };
+    let before = calls(&conn);
+
+    // Llega tarde un mensaje con el MISMO time_updated que la última fila ya leída (el cursor).
+    oc.execute_batch(
+        "INSERT INTO message (id, session_id, time_created, time_updated, data)
+         SELECT 'msg_tarde', session_id, time_created,
+                (SELECT MAX(t) FROM (SELECT MAX(time_updated) AS t FROM message UNION ALL SELECT MAX(time_updated) FROM part UNION ALL SELECT MAX(time_updated) FROM session)),
+                data
+         FROM message WHERE json_extract(data, '$.role') = 'assistant' LIMIT 1;",
+    )
+    .unwrap();
+    ingest::scan_all(&mut conn, &providers).unwrap();
+    assert_eq!(
+        calls(&conn),
+        before + 1,
+        "la fila con el mismo time_updated que el cursor no se pierde"
+    );
+    // Y releer la ventana de solapamiento no duplica.
+    ingest::scan_all(&mut conn, &providers).unwrap();
+    assert_eq!(calls(&conn), before + 1);
 }
