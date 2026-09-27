@@ -198,6 +198,13 @@ export function installMocks() {
           { id: 3, name: "infra", cwd: "/home/u/infra", costUsd: 9.2, calls: 700 },
           { id: 4, name: "scripts", cwd: "/home/u/scripts", costUsd: 6.3, calls: 890 },
         ];
+      case "get_insights":
+        return [
+          { kind: "compactions", severity: "critical", params: { n: 3, project: "AgentBoard", branch: "feat/v2-sesiones", max: 4, sessionId: "s1" }, message: "" },
+          { kind: "expensive_model", severity: "warn", params: { model: "claude-fable-5-1", cost: 64.88, saving: 47.78, share: 0.92, cheaper: "claude-sonnet-5" }, message: "" },
+          { kind: "tool_errors", severity: "warn", params: { tool: "Bash", rate: 0.14, errors: 31, calls: 221, command: "npm", commandErrors: 22 }, message: "" },
+          { kind: "spend_spike", severity: "info", params: { ts: now - 9 * DAY, cost: 43.3, times: 2.8, mean: 15.3 }, message: "" },
+        ];
       case "list_prices": {
         const overrides = new Map((mockSettings().priceOverrides as { model: string; input: number; output: number; cacheRead: number; cacheWrite: number; cacheWrite1h: number }[]).map((p) => [p.model, p]));
         const base: [string, number[] | null, number][] = [
