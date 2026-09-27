@@ -98,6 +98,8 @@ export function Pricing({
   const [newModel, setNewModel] = useState("");
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  // Errores de guardar/importar: se muestran junto al formulario, sin sustituir el editor.
+  const [opError, setOpError] = useState<string | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
   // Gasto del mes (todos los agentes y proyectos) para las barras de presupuesto.
   const [month, setMonth] = useState<{ total: number; today: number; projects: BreakdownRow[]; agents: BreakdownRow[] } | null>(null);
@@ -143,12 +145,15 @@ export function Pricing({
 
   const save = async (next: Settings, message: string) => {
     setSaving(true);
+    setOpError(null);
     try {
       await onSave(next);
       setNotice(message);
       setTimeout(() => setNotice(null), 2500);
+      return true;
     } catch (e) {
-      setError(String(e));
+      setOpError(t("No se pudo guardar: {e}", { e: String(e) }));
+      return false;
     } finally {
       setSaving(false);
     }
@@ -156,8 +161,8 @@ export function Pricing({
   const savePrices = async () => {
     const priceOverrides = mergeOverrides(settings.priceOverrides, draft);
     if (!priceOverrides) return;
-    await save({ ...settings, priceOverrides }, t("Precios guardados: los costes ya están recalculados."));
-    setDraft({});
+    // El borrador solo se descarta cuando el guardado se confirma; si falla, sigue ahí para reintentar.
+    if (await save({ ...settings, priceOverrides }, t("Precios guardados: los costes ya están recalculados."))) setDraft({});
   };
   const restore = (model: string) =>
     save({ ...settings, priceOverrides: settings.priceOverrides.filter((p) => p.model !== model) }, t("Precio restablecido."));
@@ -174,8 +179,7 @@ export function Pricing({
     if (first) document.getElementById(`price-${first.model}-0`)?.focus();
   };
   const restoreAll = async () => {
-    await save({ ...settings, priceOverrides: [] }, t("Precios por defecto restaurados."));
-    setDraft({});
+    if (await save({ ...settings, priceOverrides: [] }, t("Precios por defecto restaurados."))) setDraft({});
     setConfirmReset(false);
   };
   const importJson = async (file: File | undefined) => {
@@ -185,7 +189,7 @@ export function Pricing({
       setDraft({ ...draft, ...parsed });
       setNotice(t("{n} precios importados: revísalos y guarda.", { n: Object.keys(parsed).length }));
     } catch (e) {
-      setError(t("No se pudo importar el archivo: {e}", { e: String(e) }));
+      setOpError(t("No se pudo importar el archivo: {e}", { e: String(e) }));
     }
   };
 
@@ -261,6 +265,14 @@ export function Pricing({
         </div>
       )}
       {notice && <div className="notice good-notice">{notice}</div>}
+      {opError && (
+        <div className="notice warn notice-row">
+          <span>{opError}</span>
+          <button className="button" onClick={() => setOpError(null)}>
+            {t("Cerrar")}
+          </button>
+        </div>
+      )}
       <div className="grid-pricing">
         <section className="panel">
           <header className="panel-head">
@@ -335,7 +347,7 @@ function Budgets({
   spentOf: (b: ScopedBudget) => number;
   agents: AgentRow[];
   saving: boolean;
-  save: (s: Settings, message: string) => Promise<void>;
+  save: (s: Settings, message: string) => Promise<boolean>;
 }) {
   const [monthly, setMonthly] = useState(settings.monthlyBudget?.toString() ?? "");
   const [daily, setDaily] = useState(settings.dailyBudget?.toString() ?? "");
