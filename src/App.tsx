@@ -7,6 +7,7 @@ import { LangContext, resolveLang, setLang, t, type LangSetting } from "./lib/i1
 import type { SectionId } from "./lib/sections";
 import { useDashboardData } from "./lib/useData";
 import { Sidebar } from "./components/Sidebar";
+import { Topbar } from "./components/Topbar";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { TooltipProvider } from "./components/Tooltip";
 import { Overview } from "./views/Overview";
@@ -38,6 +39,7 @@ export default function App() {
   const [refresh, setRefresh] = useState(0);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [live, setLive] = useState(false);
+  const [lastScan, setLastScan] = useState<number | null>(null);
 
   const range = useMemo(() => periodRange(period), [period, refresh]);
 
@@ -71,6 +73,7 @@ export default function App() {
     let first = true;
     const off = listen("ingest://done", () => {
       setRefresh((n) => n + 1);
+      setLastScan(Date.now());
       // El primer evento es el escaneo inicial; los siguientes son relecturas en vivo.
       if (!first) {
         setLive(true);
@@ -126,20 +129,7 @@ export default function App() {
     <TooltipProvider>
       {/* Al cambiar de idioma se vuelve a montar todo con las cadenas nuevas. */}
       <div className="app" key={lang}>
-        <Sidebar
-          section={section}
-          setSection={setSection}
-          agents={agents}
-          projects={projects}
-          hiddenAgents={hiddenAgents}
-          hiddenProjects={hiddenProjects}
-          toggleAgent={(id) => setHiddenAgents((s) => toggle(s, id))}
-          toggleProject={(id) => setHiddenProjects((s) => toggle(s, id))}
-          onlyProject={onlyProject}
-          period={period}
-          setPeriod={setPeriod}
-          onSettings={() => setShowSettings(true)}
-        />
+        <Sidebar section={section} setSection={setSection} onSettings={() => setShowSettings(true)} />
         <div className="content">
           {loadError && (
             <div className="notice warn banner">
@@ -147,7 +137,20 @@ export default function App() {
               <button className="link" onClick={() => setLoadError(null)}>{t("Cerrar")}</button>
             </div>
           )}
-          {live && <div className="live-badge">{t("Actualizado en vivo")}</div>}
+          <Topbar
+            period={period}
+            setPeriod={setPeriod}
+            agents={agents}
+            projects={projects}
+            hiddenAgents={hiddenAgents}
+            hiddenProjects={hiddenProjects}
+            toggleAgent={(id) => setHiddenAgents((s) => toggle(s, id))}
+            toggleProject={(id) => setHiddenProjects((s) => toggle(s, id))}
+            onlyProject={onlyProject}
+            lastScan={lastScan}
+            flash={live}
+            onExport={doExport}
+          />
           {content}
         </div>
       </div>
