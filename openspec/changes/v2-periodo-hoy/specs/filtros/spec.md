@@ -1,8 +1,14 @@
 # Spec Delta
 
-## MODIFIED Requirements
+## REMOVED Requirements
 
 ### Requirement: Periodos
+**Reason**: describía periodos que la app nunca ofreció (Mes, 6 meses, rango personalizado) y omitía los de 60 y 90 días.
+**Migration**: sustituido por «Periodos disponibles», con los periodos reales y el nuevo «Hoy».
+
+## ADDED Requirements
+
+### Requirement: Periodos disponibles
 El sistema SHALL ofrecer los periodos Hoy, 7 días, 30 días, 60 días, 90 días y Todo, calculados en la zona horaria local: cada periodo de N días incluye hoy y los N − 1 días anteriores desde las 00:00 locales. El periodo anterior de «Hoy», para comparar, SHALL ser ayer.
 
 #### Scenario: Periodo "Hoy"
