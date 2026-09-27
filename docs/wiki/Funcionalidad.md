@@ -9,7 +9,7 @@ y su gráfico, y una vista ampliada al pulsarlo. Todo respeta los filtros activo
 
 | Apartado | Qué responde |
 | --- | --- |
-| **Resumen** | KPIs (coste, sesiones, cache hit, ahorro, burn rate, gasto del mes) con su variación, gasto diario por agente con la línea del periodo anterior, «Lo que deberías saber» y top de proyectos, modelos y actividades. |
+| **Resumen** | KPIs (coste, sesiones, cache hit, ahorro, burn rate, gasto del mes) con su variación, gasto diario por agente con la línea del periodo anterior, «Hoy en directo» y top de proyectos, modelos y actividades. |
 | **Daily Activity** | Cuánto se gasta cada día. |
 | **By Agent** | Qué agente se usa más y cuánto cuesta cada uno. |
 | **By Project** | Coste por proyecto (y por rama al elegir un proyecto), con el *overhead* de contexto. |
@@ -23,11 +23,17 @@ y su gráfico, y una vista ampliada al pulsarlo. Todo respeta los filtros activo
 | **Agent Types** | Subagentes de todos los agentes (Claude Code, Codex, Gemini, OpenCode, Cursor…), por agente y tipo, con su coste. |
 | **Precios y presupuestos** | Precios por modelo editables (origen: por defecto, editado, coste del agente o falta precio) y presupuestos mensual, diario y por proyecto o agente con su progreso. |
 
-## Lo que deberías saber
+## Hoy en directo
 
-La portada calcula avisos sobre el filtro activo, del más grave al menos (importante, aviso,
-información y lo que va bien); enseña los cinco primeros y un botón para ver todos. Cada aviso
-enlaza a donde investigarlo.
+Junto al gasto diario, la portada muestra siempre lo de hoy (sea cual sea el periodo, con los
+filtros de agentes y proyectos): el gasto desde las 00:00 y su variación frente a ayer hasta la
+misma hora, el ritmo de la última hora, el gasto por hora y la sesión activa (o la última de
+hoy) con enlace a su detalle. Se actualiza con cada relectura de los logs.
+
+## Avisos para agentes (MCP)
+
+La herramienta MCP `get_insights` calcula avisos sobre el filtro, del más grave al menos
+(importante, aviso, información y lo que va bien), con su texto en español:
 
 | Aviso | Salta cuando |
 | --- | --- |

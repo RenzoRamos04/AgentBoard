@@ -76,7 +76,7 @@ cada apartado con su tabla y su gráfico.
 
 | | |
 |---|---|
-| 📊 | **Resumen** — KPIs con su variación frente al periodo anterior, gasto diario por agente, avisos «Lo que deberías saber» y top de proyectos, modelos y actividades |
+| 📊 | **Resumen** — KPIs con su variación frente al periodo anterior, gasto diario por agente, «Hoy en directo» y top de proyectos, modelos y actividades |
 | 🧾 | **Proyectos** — cada proyecto con sus agentes, ramas, sesiones, tiempo activo y coste; su detalle baja a cada sesión, con el coste acumulado, los turnos y la latencia de cada herramienta |
 | 🏷️ | **Precios y presupuestos** — precios por modelo editables (y aviso de los que faltan); presupuestos mensual, diario y por proyecto o agente |
 | 📅 | **Daily Activity** — cuánto se gasta cada día |

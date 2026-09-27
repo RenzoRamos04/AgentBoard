@@ -205,36 +205,6 @@ export interface SessionDetail {
   tools: ToolStat[];
 }
 
-export type InsightKind =
-  | "compactions"
-  | "expensive_model"
-  | "tool_errors"
-  | "spend_spike"
-  | "cache_drop"
-  | "unpriced_models"
-  | "project_share"
-  | "model_share"
-  | "top_session"
-  | "command_errors"
-  | "mcp_errors"
-  | "low_cache"
-  | "one_shot_low"
-  | "one_shot_good"
-  | "subagent_share"
-  | "pace"
-  | "after_hours"
-  | "session_cost_up"
-  | "unused_agents"
-  | "cache_savings";
-
-export interface Insight {
-  kind: InsightKind;
-  severity: "critical" | "warn" | "info" | "good";
-  params: Record<string, string | number>;
-  /** Texto en español (el que usa el servidor MCP). */
-  message: string;
-}
-
 export type Theme = "system" | "light" | "dark";
 
 export type Language = "system" | "es" | "en" | "pt" | "fr";
@@ -293,7 +263,6 @@ export const api = {
   activityDaily: (filter: Filter) => invoke<ActivityDay[]>("get_activity_daily", { filter, tzOffsetMin: tzOffsetMin() }),
   agents: (filter: Filter) => invoke<AgentRow[]>("list_agents", { filter }),
   projects: (filter: Filter) => invoke<ProjectRow[]>("list_projects", { filter }),
-  insights: (filter: Filter) => invoke<Insight[]>("get_insights", { filter, tzOffsetMin: tzOffsetMin() }),
   prices: (filter: Filter) => invoke<PriceRow[]>("list_prices", { filter }),
   sessions: (filter: Filter, limit?: number) => invoke<SessionList>("list_sessions", { filter, limit }),
   projectSummaries: (filter: Filter) => invoke<ProjectSummary[]>("list_project_summaries", { filter }),

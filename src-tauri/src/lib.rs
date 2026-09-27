@@ -98,7 +98,6 @@ pub fn run() {
             commands::list_project_summaries,
             commands::get_project_detail,
             commands::list_prices,
-            commands::get_insights,
             commands::get_settings,
             commands::set_settings,
         ])

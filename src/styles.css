@@ -448,20 +448,6 @@ svg .marker text { fill: var(--critical); font-family: var(--font-mono); font-si
 .scoped-add input { width: 100%; }
 .grid-pricing .toolbar .search { flex: 0 1 300px; }
 
-/* Lo que deberías saber */
-.insights { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
-.insight { display: flex; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--row-border); }
-.insights .insight:first-child { padding-top: 0; }
-.insights .insight:last-child { border-bottom: 0; }
-.insight-mark { width: 26px; height: 26px; flex-shrink: 0; border-radius: 7px; display: flex; align-items: center; justify-content: center; font-family: var(--font-mono); font-weight: 600; font-size: 13px; }
-.insight-mark.critical { background: color-mix(in srgb, var(--critical) 18%, transparent); color: var(--critical); }
-.insight-mark.warn { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
-.insight-mark.info { background: color-mix(in srgb, var(--link) 18%, transparent); color: var(--link); }
-.insight-mark.good { background: color-mix(in srgb, var(--good) 18%, transparent); color: var(--good); }
-.insight-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; font-size: 12.5px; }
-.insight-text > span { color: var(--text-secondary); line-height: 1.4; }
-.insight-text .link { align-self: flex-start; }
-.insight-ok { border-bottom: 0; }
 
 /* Panel lateral: detalles del diseño V2 */
 .brand-version { font-family: var(--font-mono); font-size: 10px; font-weight: 500; color: var(--accent-ink); background: var(--accent-soft); border-radius: 4px; padding: 1px 6px; flex-shrink: 0; }
@@ -555,14 +541,10 @@ kbd { font-family: var(--font-mono); font-size: 10px; color: var(--text-secondar
 @media (max-width: 1180px) {
   .live span:last-child { display: none; }
 }
-.insights-more { align-self: flex-start; margin-top: 8px; }
-#insights { max-height: none; }
 
 /* Tarjetas ordenadas: misma altura por fila y sin huecos */
 .grid-top.fixed-row > .panel { height: 450px; }
 .grid-top.fixed-row > .panel > .chart-box { flex: 1; }
-#insights .insights { flex: 1; min-height: 0; overflow-y: auto; margin-right: -8px; padding-right: 8px; }
-#insights .insights-more { margin-top: 0; }
 .card-alert > span:last-child { white-space: nowrap; }
 .grid-3 > .panel, .grid-2 > .panel, .grid-2 > .chart-box { min-height: 0; }
 /* Precios: la tabla nunca se sale; en ventanas estrechas los presupuestos van debajo */
@@ -583,3 +565,19 @@ svg .axis-label { fill: var(--text-muted); font-family: var(--font-mono); font-s
 svg .baseline { stroke: var(--border); stroke-width: 1; }
 svg .grid { stroke-dasharray: 3 3; }
 
+
+/* Hoy en directo */
+.today-live { display: flex; flex-direction: column; gap: 12px; flex: 1; min-height: 0; }
+.today-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.today-value { font-size: 30px; font-weight: 500; color: var(--accent); line-height: 1.1; }
+.today-row { display: flex; justify-content: space-between; font-size: 12.5px; }
+.today-chart .columns-max { display: none; }
+.today-session { margin-top: auto; display: flex; flex-direction: column; gap: 5px; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface-2); font-size: 12.5px; }
+.today-session.active { border-color: color-mix(in srgb, var(--good) 45%, var(--border)); }
+.today-session-head { display: flex; align-items: center; gap: 8px; color: var(--text-secondary); font-size: 12px; }
+.today-session-cost { margin-left: auto; }
+.today-session-name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.today-session .link { align-self: flex-start; margin-top: 2px; }
+.status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-muted); flex-shrink: 0; }
+.status-dot.on { background: var(--good); box-shadow: 0 0 0 3px color-mix(in srgb, var(--good) 20%, transparent); animation: pulse 1.8s ease-in-out infinite; }
+@keyframes pulse { 50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--good) 5%, transparent); } }

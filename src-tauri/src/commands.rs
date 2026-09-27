@@ -175,17 +175,6 @@ pub fn list_prices(
 }
 
 #[tauri::command]
-pub fn get_insights(
-    state: tauri::State<AppState>,
-    filter: Option<Filter>,
-    tz_offset_min: i64,
-) -> CmdResult<Vec<crate::findings::Finding>> {
-    with_db(&state, |c| {
-        crate::findings::compute(c, &filter.unwrap_or_default(), now_ms(), tz_offset_min)
-    })
-}
-
-#[tauri::command]
 pub fn get_settings() -> CmdResult<Settings> {
     Ok(settings::load())
 }

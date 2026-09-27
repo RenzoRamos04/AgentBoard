@@ -222,19 +222,6 @@ export function installMocks() {
           { id: 3, name: "infra", cwd: "/home/u/infra", costUsd: 9.2, calls: 700 },
           { id: 4, name: "scripts", cwd: "/home/u/scripts", costUsd: 6.3, calls: 890 },
         ];
-      case "get_insights":
-        return [
-          { kind: "compactions", severity: "critical", params: { n: 3, project: "AgentBoard", branch: "feat/v2-sesiones", max: 4, sessionId: "s1" }, message: "" },
-          { kind: "expensive_model", severity: "warn", params: { model: "claude-fable-5-1", cost: 64.88, saving: 47.78, share: 0.92, cheaper: "claude-sonnet-5" }, message: "" },
-          { kind: "unpriced_models", severity: "warn", params: { n: 2, models: "gpt-6-luna, gemini-3.8-flash", calls: 19 }, message: "" },
-          { kind: "mcp_errors", severity: "warn", params: { server: "codebase-memory", rate: 0.11, errors: 4, calls: 36 }, message: "" },
-          { kind: "one_shot_low", severity: "warn", params: { rate: 0.6, turns: 48 }, message: "" },
-          { kind: "project_share", severity: "info", params: { project: "AgentBoard", key: "/AgentBoard", share: 0.93, cost: 275.98, n: 6 }, message: "" },
-          { kind: "top_session", severity: "info", params: { sessionId: "s1", cost: 38.62, share: 0.8, project: "AgentBoard", branch: "feat/v2", model: "claude-opus-5-5", durationMs: 9_300_000 }, message: "" },
-          { kind: "command_errors", severity: "info", params: { command: "pkill", errors: 26, calls: 37, rate: 0.7 }, message: "" },
-          { kind: "unused_agents", severity: "info", params: { n: 1, agents: "GitHub Copilot CLI" }, message: "" },
-          { kind: "cache_savings", severity: "good", params: { saving: 2751.19, cost: 296.61, times: 9.3 }, message: "" },
-        ];
       case "list_prices": {
         const overrides = new Map((mockSettings().priceOverrides as { model: string; input: number; output: number; cacheRead: number; cacheWrite: number; cacheWrite1h: number }[]).map((p) => [p.model, p]));
         const base: [string, number[] | null, number][] = [

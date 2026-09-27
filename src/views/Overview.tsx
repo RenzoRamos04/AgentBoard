@@ -8,7 +8,7 @@ import { ppDelta, relDelta } from "../lib/delta";
 import { Panel } from "../components/Panel";
 import { Columns, Legend, ShareBar } from "../components/Charts";
 import { dayPoints, ModelPanel, startOfDay } from "./panels";
-import { Insights } from "./Insights";
+import { TodayLive } from "./TodayLive";
 
 
 export function periodLabel(period: Period) {
@@ -171,7 +171,7 @@ export function Overview({
   singleProject,
   open,
   openSession,
-  openProject,
+  refresh,
 }: {
   data: DashboardData;
   period: Period;
@@ -179,7 +179,8 @@ export function Overview({
   singleProject: string | null;
   open: (s: SectionId) => void;
   openSession: (id: string) => void;
-  openProject: (key: string) => void;
+  /** Contador de relecturas: la tarjeta «Hoy en directo» se recarga con cada una. */
+  refresh: number;
 }) {
   const scope = singleProject ? t("proyecto {name}", { name: singleProject }) : t("todos los agentes y proyectos");
   const monthSpent = data.month.reduce((a, p) => a + p.costUsd, 0);
@@ -216,8 +217,8 @@ export function Overview({
             <DailyByAgent data={data} />
           </Panel>
         )}
-        <Panel id="insights" title={t("Lo que deberías saber")} question={data.insights.length ? t("{n} avisos", { n: data.insights.length }) : undefined}>
-          <Insights items={data.insights} open={open} openSession={openSession} openProject={openProject} />
+        <Panel id="today" title={t("Hoy en directo")} question={t("sea cual sea el periodo")}>
+          <TodayLive filter={data.filter} refresh={refresh} openSession={openSession} />
         </Panel>
       </div>
       <div className="grid-3">
