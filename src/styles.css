@@ -589,3 +589,6 @@ kbd { font-family: var(--font-mono); font-size: 10px; color: var(--text-secondar
 .checklist label { min-height: 30px; padding: 0 8px; }
 .popover .search { height: var(--control-h-sm); }
 @media (max-width: 1400px) { .grid-detail { grid-template-columns: 1fr; } }
+svg .axis-label { fill: var(--text-muted); font-family: var(--font-mono); font-size: 10px; }
+svg .baseline { stroke: var(--border); stroke-width: 1; }
+svg .grid { stroke-dasharray: 3 3; }

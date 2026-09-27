@@ -84,7 +84,7 @@ export function Columns({
   format,
   axis = (ts: number) => new Date(ts).toLocaleDateString(LOCALES[getLang()], { day: "numeric", month: "short" }),
   compare,
-  yAxis = false,
+  yAxis = true,
 }: {
   points: ColumnPoint[];
   height?: number;
@@ -93,7 +93,7 @@ export function Columns({
   axis?: (ts: number) => string;
   /** Valores de otro periodo alineados con `points`, pintados como línea discontinua. */
   compare?: number[];
-  /** Eje de importes a la izquierda con líneas guía. */
+  /** Eje de valores a la izquierda con líneas guía (por defecto, sí). */
   yAxis?: boolean;
 }) {
   const setTip = useTooltip();
@@ -188,9 +188,13 @@ export function LineChart({
   const [ref, width] = useWidth<HTMLDivElement>();
   const [hover, setHover] = useState<number | null>(null);
   if (!points.length) return <Empty />;
-  const pad = { top: 12, right: 12, bottom: 4, left: 4 };
+  // Margen izquierdo para el eje de valores, con marcas «redondas».
+  const pad = { top: 12, right: 12, bottom: 4, left: 60 };
   const w = Math.max(width, 100);
-  const max = Math.max(...points.map((p) => p.value), 1e-12);
+  const rawMax = Math.max(...points.map((p) => p.value), 1e-12);
+  const step = niceStep(rawMax / 3);
+  const max = Math.max(step * Math.ceil(rawMax / step), 1e-12);
+  const ticks = Array.from({ length: Math.round(max / step) + 1 }, (_, i) => i * step);
   const iw = w - pad.left - pad.right;
   const ih = height - pad.top - pad.bottom;
   const x = (i: number) => pad.left + (points.length > 1 ? (i / (points.length - 1)) * iw : iw / 2);
@@ -207,11 +211,17 @@ export function LineChart({
   };
   return (
     <div className="linechart" ref={ref}>
-      <div className="columns-max muted">{t("máx. {v}", { v: format(max) })}</div>
+      <div className="columns-max muted">{t("máx. {v}", { v: format(rawMax) })}</div>
       <svg width={w} height={height} role="img" aria-label="Evolución">
-        {[0.25, 0.5, 0.75].map((f) => (
-          <line key={f} className="grid" x1={pad.left} x2={pad.left + iw} y1={y(max * f)} y2={y(max * f)} />
+        {ticks.map((v) => (
+          <g key={v}>
+            {v > 0 && <line className="grid" x1={pad.left} x2={pad.left + iw} y1={y(v)} y2={y(v)} />}
+            <text className="axis-label" x={pad.left - 8} y={y(v)} textAnchor="end" dominantBaseline="middle">
+              {format(v)}
+            </text>
+          </g>
         ))}
+        <line className="baseline" x1={pad.left} x2={pad.left + iw} y1={y(0)} y2={y(0)} />
         <path d={area} fill={color} opacity={0.12} />
         <path d={path} fill="none" stroke={color} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
         {markers?.map((m, i) => (
@@ -244,7 +254,7 @@ export function LineChart({
           }}
         />
       </svg>
-      <div className="columns-axis muted" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
+      <div className="columns-axis muted with-y" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
         <span className="first">{axis(points[0].ts)}</span>
         <span style={{ gridColumn: 2 }}>{points.length > 2 ? axis(points[mid].ts) : ""}</span>
         <span className="last">{points.length > 1 ? axis(points[points.length - 1].ts) : ""}</span>
