@@ -178,20 +178,43 @@ fn run_tool(conn: &Connection, name: &str, args: &Value) -> Result<Value> {
     }
 }
 
-/// Construye el `Filter` a partir de los argumentos de la herramienta.
+/// Construye el `Filter` a partir de los argumentos de la herramienta. Los tipos se
+/// validan: un filtro mal escrito devuelve error, nunca amplía la consulta en silencio.
 fn filter_from(args: &Value) -> Result<queries::Filter> {
-    let (from, to) = match args.get("period").and_then(Value::as_str) {
-        Some(p) => period_range(p)?,
-        None => (None, None),
+    let (from, to) = match args.get("period") {
+        None | Some(Value::Null) => (None, None),
+        Some(p) => period_range(
+            p.as_str()
+                .ok_or_else(|| anyhow!("period debe ser texto: today, 7d, 30d, 60d, 90d o all"))?,
+        )?,
     };
-    let agents = args["agents"].as_array().map(|a| {
-        a.iter()
-            .filter_map(|x| x.as_str().map(String::from))
-            .collect()
-    });
-    let projects = args["projects"]
-        .as_array()
-        .map(|a| a.iter().filter_map(Value::as_i64).collect());
+    let agents = match args.get("agents") {
+        None | Some(Value::Null) => None,
+        Some(a) => Some(
+            a.as_array()
+                .ok_or_else(|| anyhow!("agents debe ser una lista de ids de agente (texto)"))?
+                .iter()
+                .map(|x| {
+                    x.as_str()
+                        .map(String::from)
+                        .ok_or_else(|| anyhow!("cada agente debe ser un id de texto"))
+                })
+                .collect::<Result<Vec<_>>>()?,
+        ),
+    };
+    let projects = match args.get("projects") {
+        None | Some(Value::Null) => None,
+        Some(p) => Some(
+            p.as_array()
+                .ok_or_else(|| anyhow!("projects debe ser una lista de ids numéricos"))?
+                .iter()
+                .map(|x| {
+                    x.as_i64()
+                        .ok_or_else(|| anyhow!("cada proyecto debe ser un id numérico"))
+                })
+                .collect::<Result<Vec<_>>>()?,
+        ),
+    };
     Ok(queries::Filter {
         from,
         to,
@@ -339,6 +362,28 @@ mod tests {
             &json!({ "jsonrpc": "2.0", "method": "notifications/initialized" })
         )
         .is_none());
+    }
+
+    #[test]
+    fn filtro_mal_tipado_es_error_no_consulta_ampliada() {
+        // Tipos incorrectos: error de herramienta, nunca «sin filtro».
+        assert!(filter_from(&json!({ "agents": "codex" })).is_err());
+        assert!(filter_from(&json!({ "agents": ["codex", 3] })).is_err());
+        assert!(filter_from(&json!({ "period": 123 })).is_err());
+        assert!(filter_from(&json!({ "projects": ["uno"] })).is_err());
+        // Bien tipado o ausente: funciona igual que antes.
+        let f = filter_from(&json!({ "agents": ["codex"], "projects": [1, 2] })).unwrap();
+        assert_eq!(f.agents.as_deref(), Some(&["codex".to_string()][..]));
+        assert_eq!(f.projects.as_deref(), Some(&[1, 2][..]));
+        assert!(filter_from(&Value::Null).unwrap().agents.is_none());
+        // Y el error llega al cliente como isError, con la conexión viva.
+        let conn = db::open_in_memory().unwrap();
+        let r = tools_call(
+            &conn,
+            Some(json!(9)),
+            &json!({ "params": { "name": "get_summary", "arguments": { "agents": "codex" } } }),
+        );
+        assert_eq!(r["result"]["isError"], true);
     }
 
     #[test]
