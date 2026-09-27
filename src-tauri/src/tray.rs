@@ -8,7 +8,7 @@ use rusqlite::Connection;
 use std::sync::{Arc, Mutex};
 use tauri::menu::{IsMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIcon;
-use tauri::{Manager, Wry};
+use tauri::{Emitter, Manager, Wry};
 
 /// Etiqueta de la ventana del panel emergente.
 pub const PANEL: &str = "panel";
@@ -67,6 +67,8 @@ pub fn show_panel(app: &tauri::AppHandle) {
     position_panel(app, &panel);
     let _ = panel.show();
     let _ = panel.set_focus();
+    // El panel se refresca nada más abrirse, sin esperar a su recarga periódica.
+    let _ = app.emit_to(PANEL, "panel://shown", ());
 }
 
 /// Coloca el panel pegado al cursor sin salirse de su monitor. Sin cursor (Wayland),
