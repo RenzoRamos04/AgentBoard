@@ -8,6 +8,7 @@ pub mod insights;
 pub mod pricing;
 pub mod providers;
 pub mod queries;
+pub mod sessions;
 pub mod settings;
 pub mod watcher;
 
@@ -86,6 +87,8 @@ pub fn run() {
             commands::list_projects,
             commands::get_data_info,
             commands::export_data,
+            commands::list_sessions,
+            commands::get_session_detail,
             commands::get_settings,
             commands::set_settings,
         ])

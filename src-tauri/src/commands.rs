@@ -5,6 +5,7 @@ use crate::insights::{self, ActivityDay, ActivityReport};
 use crate::queries::{
     self, AgentRow, BreakdownRow, DataInfo, Filter, Point, ProjectRow, SeriesPoint, Summary,
 };
+use crate::sessions::{self, SessionDetail, SessionList};
 use crate::settings::{self, Settings};
 use rusqlite::Connection;
 use std::sync::{Arc, Mutex};
@@ -122,6 +123,22 @@ pub fn export_data(
     with_db(&state, |c| {
         queries::export(c, &filter.unwrap_or_default(), &format)
     })
+}
+
+#[tauri::command]
+pub fn list_sessions(
+    state: tauri::State<AppState>,
+    filter: Option<Filter>,
+    limit: Option<usize>,
+) -> CmdResult<SessionList> {
+    with_db(&state, |c| {
+        sessions::list_sessions(c, &filter.unwrap_or_default(), limit)
+    })
+}
+
+#[tauri::command]
+pub fn get_session_detail(state: tauri::State<AppState>, id: String) -> CmdResult<SessionDetail> {
+    with_db(&state, |c| sessions::session_detail(c, &id))
 }
 
 #[tauri::command]
