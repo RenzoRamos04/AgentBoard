@@ -101,6 +101,72 @@ export interface DataInfo {
   lastScan: number | null;
 }
 
+export interface SessionRow {
+  id: string;
+  agentId: string;
+  agentName: string;
+  projectId: number | null;
+  project: string | null;
+  branch: string | null;
+  startedAt: number;
+  endedAt: number;
+  model: string | null;
+  costUsd: number;
+  calls: number;
+  cacheHit: number;
+  inputTokens: number;
+  outputTokens: number;
+  hasPrice: boolean;
+  turns: number;
+  compactions: number;
+  toolCalls: number;
+  toolErrors: number;
+  subagentCalls: number;
+  isSubagent: boolean;
+}
+
+export interface SessionList {
+  sessions: SessionRow[];
+  total: number;
+}
+
+export interface TurnRow {
+  n: number;
+  id: string;
+  ts: number;
+  activity: string;
+  costUsd: number;
+  calls: number;
+  inputTokens: number;
+  outputTokens: number;
+  tools: [string, number][];
+  toolErrors: number;
+}
+
+export interface ToolStat {
+  tool: string;
+  calls: number;
+  errors: number;
+  p50Ms: number | null;
+  p95Ms: number | null;
+}
+
+export interface KeyCost {
+  key: string;
+  costUsd: number;
+  calls: number;
+}
+
+export interface SessionDetail {
+  session: SessionRow;
+  timeline: { ts: number; costUsd: number }[];
+  compactions: number[];
+  turns: TurnRow[];
+  activities: KeyCost[];
+  models: KeyCost[];
+  tools: ToolStat[];
+}
+
 export type Theme = "system" | "light" | "dark";
 
 export type Language = "system" | "es" | "en" | "pt" | "fr";
@@ -125,6 +191,8 @@ export const api = {
   activityDaily: (filter: Filter) => invoke<ActivityDay[]>("get_activity_daily", { filter, tzOffsetMin: tzOffsetMin() }),
   agents: (filter: Filter) => invoke<AgentRow[]>("list_agents", { filter }),
   projects: (filter: Filter) => invoke<ProjectRow[]>("list_projects", { filter }),
+  sessions: (filter: Filter, limit?: number) => invoke<SessionList>("list_sessions", { filter, limit }),
+  sessionDetail: (id: string) => invoke<SessionDetail>("get_session_detail", { id }),
   dataInfo: () => invoke<DataInfo>("get_data_info"),
   settings: () => invoke<Settings>("get_settings"),
   saveSettings: (settings: Settings) => invoke<Settings>("set_settings", { settings }),

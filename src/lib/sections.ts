@@ -4,6 +4,7 @@ export type SectionId =
   | "daily"
   | "agent"
   | "project"
+  | "sessions"
   | "activity"
   | "model"
   | "tools"
@@ -34,6 +35,7 @@ export const SECTIONS: Section[] = [
   { id: "agent", title: "By Agent", question: "¿Qué agente uso más?", group: "coste" },
   { id: "project", title: "By Project", question: "¿Cuánto costó cada proyecto?", group: "coste" },
   { id: "model", title: "By Model", question: "¿Uso el modelo adecuado?", group: "coste" },
+  { id: "sessions", title: "Sesiones", question: "¿Qué sesión se disparó y por qué?", group: "trabajo" },
   { id: "activity", title: "By Activity", question: "¿En qué se va el gasto?", group: "trabajo" },
   { id: "tools", title: "Tools", question: "¿Qué herramientas usa y dónde fallan?", group: "herramientas" },
   { id: "shell", title: "Shell Commands", question: "¿Qué comandos ejecuta?", group: "herramientas" },
@@ -43,3 +45,6 @@ export const SECTIONS: Section[] = [
 ];
 
 export const sectionOf = (id: SectionId) => SECTIONS.find((s) => s.id === id)!;
+
+/** Apartados con vista ampliada sobre los datos del panel (el resumen y Sesiones tienen la suya). */
+export type DetailSectionId = Exclude<SectionId, "overview" | "sessions">;

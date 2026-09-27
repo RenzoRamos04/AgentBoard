@@ -12,6 +12,8 @@ import { SettingsDialog } from "./components/SettingsDialog";
 import { TooltipProvider } from "./components/Tooltip";
 import { Overview } from "./views/Overview";
 import { Section } from "./views/Section";
+import { Sessions } from "./views/Sessions";
+import { SessionDetail } from "./views/SessionDetail";
 
 /** Idioma recordado en este equipo, para pintar bien antes de leer los ajustes. */
 function storedLang(): LangSetting {
@@ -25,7 +27,13 @@ function storedLang(): LangSetting {
 }
 
 export default function App() {
-  const [section, setSection] = useState<SectionId>("overview");
+  const [section, setSectionState] = useState<SectionId>("overview");
+  // Sesión abierta en el apartado Sesiones; al cambiar de apartado se vuelve al listado.
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const setSection = (s: SectionId) => {
+    setSectionState(s);
+    setSessionId(null);
+  };
   const [period, setPeriod] = useState<Period>({ kind: "30d" });
   // Se guardan los *ocultos*: un agente o proyecto nuevo aparece incluido por defecto.
   const [hiddenAgents, setHiddenAgents] = useState<Set<string>>(new Set());
@@ -138,7 +146,13 @@ export default function App() {
   };
 
   let content;
-  if (error) content = <div className="main error">{t("No se pudieron cargar los datos: {e}", { e: error })}</div>;
+  if (section === "sessions")
+    content = sessionId ? (
+      <SessionDetail id={sessionId} refresh={refresh} back={() => setSessionId(null)} />
+    ) : (
+      <Sessions filter={filter} period={period} refresh={refresh} open={setSessionId} />
+    );
+  else if (error) content = <div className="main error">{t("No se pudieron cargar los datos: {e}", { e: error })}</div>;
   else if (!data) content = <div className="main muted">{t("Cargando…")}</div>;
   else if (section === "overview")
     content = <Overview data={data} period={period} budget={settings.monthlyBudget} singleProject={singleProject} open={setSection} />;
