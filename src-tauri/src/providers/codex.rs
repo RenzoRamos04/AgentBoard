@@ -33,6 +33,9 @@ struct FileState {
     pending_prompt: Option<String>,
     /// Con `token_usage_record` presentes se ignoran los `token_count` (formato antiguo).
     has_usage_records: bool,
+    /// Con eventos `item_completed` (formato nuevo) las herramientas salen de ellos y se ignoran
+    /// los `function_call` de `response_item`, para no contarlas dos veces.
+    has_items: bool,
 }
 
 impl Codex {
@@ -116,6 +119,138 @@ fn tool_target(name: &str, args: &Value) -> Option<String> {
     (!s.is_empty()).then(|| s.chars().take(500).collect())
 }
 
+/// Duración `{"secs", "nanos"}` de un item, en ms.
+fn duration_ms(d: &Value) -> Option<i64> {
+    let secs = d["secs"].as_i64()?;
+    Some(secs * 1000 + d["nanos"].as_i64().unwrap_or(0) / 1_000_000)
+}
+
+/// Una herramienta sacada de un `item_completed` (formato nuevo de Codex).
+struct ItemTool {
+    call_id: String,
+    tool: String,
+    target: Option<String>,
+    detail: Option<String>,
+    is_error: bool,
+    duration_ms: Option<i64>,
+}
+
+/// Herramientas de un `item_completed`. Un `FileChange` da una por archivo.
+fn item_tools(it: &Value) -> Vec<ItemTool> {
+    let t = |call_id: String,
+             tool: &str,
+             target: Option<String>,
+             detail: Option<String>,
+             is_error: bool,
+             duration_ms: Option<i64>| ItemTool {
+        call_id,
+        tool: tool.to_string(),
+        target,
+        detail,
+        is_error,
+        duration_ms,
+    };
+    let id = it["id"].as_str().unwrap_or("").to_string();
+    let status = it["status"].as_str().unwrap_or("");
+    let failed = matches!(status, "failed" | "declined");
+    let dur = duration_ms(&it["duration"]);
+    match it["type"].as_str() {
+        // `source` es `unified_exec_startup` también en los comandos del modelo: cuentan todos.
+        Some("CommandExecution") => {
+            let target = tool_target("Bash", &serde_json::json!({ "command": it["command"] }));
+            let err = failed || it["exit_code"].as_i64().is_some_and(|c| c != 0);
+            vec![t(id, "Bash", target, None, err, dur)]
+        }
+        Some("FileChange") => {
+            let mut files: Vec<(&String, &Value)> = it["changes"]
+                .as_object()
+                .map(|m| m.iter().collect())
+                .unwrap_or_default();
+            files.sort_by(|a, b| a.0.cmp(b.0));
+            files
+                .into_iter()
+                .enumerate()
+                .map(|(i, (path, change))| {
+                    let tool = match change["type"].as_str() {
+                        Some("add") => "Write",
+                        Some("delete") => "Delete",
+                        _ => "Edit",
+                    };
+                    t(
+                        format!("{id}:{i}"),
+                        tool,
+                        Some(path.chars().take(500).collect()),
+                        None,
+                        failed,
+                        None,
+                    )
+                })
+                .collect()
+        }
+        Some("McpToolCall") => {
+            let (server, tool) = (
+                it["server"].as_str().unwrap_or("mcp"),
+                it["tool"].as_str().unwrap_or("tool"),
+            );
+            let err = failed || !it["error"].is_null();
+            vec![t(
+                id,
+                &format!("mcp__{server}__{tool}"),
+                None,
+                None,
+                err,
+                dur,
+            )]
+        }
+        Some("WebSearch") => vec![t(
+            id,
+            "WebSearch",
+            it["query"].as_str().map(str::to_string),
+            None,
+            false,
+            None,
+        )],
+        Some("Extension") if it["kind"].as_str() == Some("web.search") => {
+            let open = it["action"]["type"].as_str() == Some("openPage");
+            let (tool, target) = if open {
+                (
+                    "WebFetch",
+                    it["action"]["url"].as_str().or(it["query"].as_str()),
+                )
+            } else {
+                ("WebSearch", it["query"].as_str())
+            };
+            vec![t(id, tool, target.map(str::to_string), None, false, None)]
+        }
+        Some("CollabAgentToolCall") if it["tool"].as_str().is_some_and(|t| t.contains("spawn")) => {
+            let detail = it["receiver_agents"][0]["role"]
+                .as_str()
+                .or(it["model"].as_str())
+                .unwrap_or("general-purpose");
+            vec![t(
+                id,
+                "Agent",
+                it["prompt"].as_str().map(|p| p.chars().take(200).collect()),
+                Some(detail.to_string()),
+                failed,
+                None,
+            )]
+        }
+        _ => vec![],
+    }
+}
+
+/// Texto de un `UserMessage` del formato nuevo.
+fn item_text(it: &Value) -> String {
+    it["content"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|c| c["text"].as_str())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// `function_call_output.output` es texto o `{"content","success"}`; el texto antiguo de shell
 /// es un JSON con `metadata.exit_code`.
 fn output_is_error(output: &Value) -> bool {
@@ -126,6 +261,16 @@ fn output_is_error(output: &Value) -> bool {
         if let Ok(v) = serde_json::from_str::<Value>(text) {
             if let Some(code) = v["metadata"]["exit_code"].as_i64() {
                 return code != 0;
+            }
+        }
+        // Salida antigua en texto plano: «Process exited with code N\nFinal output:…».
+        if let Some(rest) = text.strip_prefix("Process exited with code ") {
+            let code: String = rest
+                .chars()
+                .take_while(|c| c.is_ascii_digit() || *c == '-')
+                .collect();
+            if let Ok(n) = code.parse::<i64>() {
+                return n != 0;
             }
         }
     }
@@ -161,6 +306,10 @@ impl Provider for Codex {
                 .and_then(|f| f.to_str())
                 .is_some_and(|f| f.starts_with("rollout-"))
             && self.log_roots().iter().any(|r| path.starts_with(r))
+    }
+
+    fn knows(&self, path: &Path) -> bool {
+        self.state.lock().is_ok_and(|s| s.contains_key(path))
     }
 
     fn reset(&self, path: &Path) {
@@ -225,8 +374,18 @@ impl Provider for Codex {
                 );
             }
             Some("event_msg") => match payload["type"].as_str() {
-                Some("user_message") => {
-                    let text = payload["message"].as_str().unwrap_or("").to_string();
+                Some("user_message") | Some("item_completed")
+                    if payload["type"].as_str() == Some("user_message")
+                        || payload["item"]["type"].as_str() == Some("UserMessage") =>
+                {
+                    if payload["type"].as_str() == Some("item_completed") {
+                        st.has_items = true;
+                    }
+                    let text = if payload["type"].as_str() == Some("user_message") {
+                        payload["message"].as_str().unwrap_or("").to_string()
+                    } else {
+                        item_text(&payload["item"])
+                    };
                     match &st.turn_id {
                         // El prompt llega tras su turn_context: completa la intención del turno.
                         Some(turn) if !st.is_subagent => out.push(Record::Turn(TurnRec {
@@ -245,6 +404,60 @@ impl Provider for Codex {
                         push_call(&mut out, st, id, usage, ts);
                     }
                 }
+                Some("item_completed") => {
+                    st.has_items = true;
+                    let it = &payload["item"];
+                    // Subagente arrancado: enlaza la llamada `spawn_agent` (mismo id) con su hilo.
+                    if it["type"].as_str() == Some("SubAgentActivity")
+                        && it["kind"].as_str() == Some("started")
+                    {
+                        if let (Some(call_id), Some(thread)) =
+                            (it["id"].as_str(), it["agent_thread_id"].as_str())
+                        {
+                            out.push(Record::ToolResult {
+                                call_id: call_id.to_string(),
+                                ts,
+                                is_error: false,
+                                agent_id: Some(thread.to_string()),
+                            });
+                        }
+                    }
+                    if it["type"].as_str() == Some("ContextCompaction") {
+                        out.push(Record::Event(EventRec {
+                            session_id: st.thread_id.clone(),
+                            ts,
+                            kind: "compaction".into(),
+                            payload_json: None,
+                        }));
+                    }
+                    for ItemTool {
+                        call_id,
+                        tool,
+                        target,
+                        detail,
+                        is_error,
+                        duration_ms: dur,
+                    } in item_tools(it)
+                    {
+                        // El item llega al terminar: la herramienta empezó `dur` antes.
+                        let start = ts - dur.unwrap_or(0);
+                        out.push(Record::ToolUse(ToolUseRec {
+                            call_id: call_id.clone(),
+                            message_id: st.turn_id.clone().unwrap_or_default(),
+                            session_id: st.thread_id.clone(),
+                            ts: start,
+                            tool,
+                            target,
+                            detail,
+                        }));
+                        out.push(Record::ToolResult {
+                            call_id,
+                            ts,
+                            is_error,
+                            agent_id: None,
+                        });
+                    }
+                }
                 Some("turn_aborted") => out.push(Record::Event(EventRec {
                     session_id: st.thread_id.clone(),
                     ts,
@@ -260,9 +473,19 @@ impl Provider for Codex {
                 payload_json: None,
             })),
             Some("response_item") => match payload["type"].as_str() {
-                Some("function_call") | Some("custom_tool_call") | Some("local_shell_call") => {
+                // Formato nuevo: las herramientas salen de `item_completed`, y `exec` es solo la
+                // envoltura del modo código (el JavaScript que llama a las herramientas reales).
+                // `spawn_agent` sí se lee siempre: el item del subagente no dice su tipo.
+                Some("function_call") | Some("custom_tool_call") | Some("local_shell_call")
+                    if (!st.has_items || payload["name"].as_str() == Some("spawn_agent"))
+                        && payload["name"].as_str() != Some("exec") =>
+                {
                     let raw = payload["name"].as_str().unwrap_or("local_shell");
-                    let namespace = payload["namespace"].as_str().filter(|n| *n != "functions");
+                    // Los namespaces propios de Codex no son servidores MCP (p. ej. `spawn_agent`
+                    // viene en `collaboration`).
+                    let namespace = payload["namespace"].as_str().filter(|n| {
+                        !matches!(*n, "functions" | "collaboration" | "multi_tool_use")
+                    });
                     let tool = match namespace {
                         Some(ns) => format!("mcp__{ns}__{raw}"),
                         None => canonical_tool(raw).to_string(),
@@ -278,11 +501,12 @@ impl Provider for Codex {
                             .unwrap_or(Value::Null),
                     };
                     let detail = (tool == "Agent").then(|| {
+                        // Sin rol pedido, Codex usa su rol por defecto: `default`.
                         args["agent_type"]
                             .as_str()
+                            .or(args["agent_role"].as_str())
                             .or(args["role"].as_str())
-                            .or(args["name"].as_str())
-                            .unwrap_or("general-purpose")
+                            .unwrap_or("default")
                             .to_string()
                     });
                     let Some(call_id) = payload["call_id"].as_str().or(payload["id"].as_str())
@@ -360,6 +584,20 @@ mod tests {
     use super::*;
 
     #[test]
+    fn error_de_shell_en_texto_plano() {
+        use serde_json::json;
+        assert!(output_is_error(&json!(
+            "Process exited with code 1\nFinal output:\nfailed"
+        )));
+        assert!(!output_is_error(&json!("Process exited with code 0\nok")));
+        assert!(output_is_error(&json!("Process exited with code -1\n")));
+        assert!(!output_is_error(&json!(
+            "texto cualquiera con error dentro"
+        )));
+        assert!(output_is_error(&json!({"success": false})));
+    }
+
+    #[test]
     fn objetivo_de_shell_y_parche() {
         let args =
             serde_json::json!({ "command": ["bash", "-lc", "git status | head"], "workdir": "/p" });
@@ -395,5 +633,79 @@ mod tests {
         )));
         assert!(!p.matches(Path::new("/h/.codex/sessions/2026/09/25/otro.jsonl")));
         assert!(!p.matches(Path::new("/h/.codex/history.jsonl")));
+    }
+
+    #[test]
+    fn formato_nuevo_con_item_completed() {
+        let p = Codex::with_roots(vec![PathBuf::from("/h/.codex/sessions")]);
+        let f = PathBuf::from("/h/.codex/sessions/2026/09/27/rollout-x.jsonl");
+        let lines = [
+            r#"{"timestamp":"2026-09-27T16:00:00.000Z","type":"session_meta","payload":{"id":"t1","cwd":"/w","git":{"branch":"feat/v2"}}}"#,
+            r#"{"timestamp":"2026-09-27T16:00:01.000Z","type":"turn_context","payload":{"turn_id":"tu1","model":"gpt-6-astra","cwd":"/w"}}"#,
+            r#"{"timestamp":"2026-09-27T16:00:02.000Z","type":"event_msg","payload":{"type":"item_completed","item":{"type":"UserMessage","id":"u1","content":[{"type":"text","text":"arregla el test que falla"}]}}}"#,
+            // Envoltura del modo código: no es una herramienta.
+            r#"{"timestamp":"2026-09-27T16:00:03.000Z","type":"response_item","payload":{"type":"custom_tool_call","name":"exec","call_id":"c1","input":"await tools.shell('ls')"}}"#,
+            r#"{"timestamp":"2026-09-27T16:00:05.000Z","type":"event_msg","payload":{"type":"item_completed","item":{"type":"CommandExecution","id":"e1","command":["/bin/zsh","-lc","cargo test --lib"],"source":"unified_exec_startup","status":"failed","exit_code":101,"duration":{"secs":2,"nanos":500000000}}}}"#,
+            r#"{"timestamp":"2026-09-27T16:00:06.000Z","type":"event_msg","payload":{"type":"item_completed","item":{"type":"FileChange","id":"f1","changes":{"/w/a.rs":{"type":"update"},"/w/b.rs":{"type":"add"}},"status":"completed"}}}"#,
+            r#"{"timestamp":"2026-09-27T16:00:07.000Z","type":"event_msg","payload":{"type":"item_completed","item":{"type":"McpToolCall","id":"m1","server":"agentboard","tool":"get_summary","arguments":{},"status":"failed","error":{"message":"x"},"duration":{"secs":0,"nanos":180000000}}}}"#,
+            r#"{"timestamp":"2026-09-27T16:00:08.000Z","type":"event_msg","payload":{"type":"item_completed","item":{"type":"Extension","kind":"web.search","id":"w1","query":"https://example.com","action":{"type":"openPage","url":"https://example.com"}}}}"#,
+            r#"{"timestamp":"2026-09-27T16:00:09.000Z","type":"event_msg","payload":{"type":"item_completed","item":{"type":"ContextCompaction","id":"cc1"}}}"#,
+            r#"{"timestamp":"2026-09-27T16:00:10.000Z","type":"response_item","payload":{"type":"function_call","name":"spawn_agent","namespace":"collaboration","call_id":"call_sa","arguments":"{\"task_name\":\"mates_01\",\"fork_turns\":\"none\"}"}}"#,
+            r#"{"timestamp":"2026-09-27T16:00:11.000Z","type":"event_msg","payload":{"type":"item_completed","item":{"type":"SubAgentActivity","id":"call_sa","kind":"started","agent_thread_id":"hijo-1","agent_path":"/root/mates_01"}}}"#,
+        ];
+        let recs: Vec<Record> = lines
+            .iter()
+            .flat_map(|l| p.parse_line(&f, l).unwrap())
+            .collect();
+        let tools: Vec<(&str, Option<&str>)> = recs
+            .iter()
+            .filter_map(|r| match r {
+                Record::ToolUse(t) => Some((t.tool.as_str(), t.target.as_deref())),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            tools,
+            vec![
+                ("Bash", Some("cargo test --lib")),
+                ("Edit", Some("/w/a.rs")),
+                ("Write", Some("/w/b.rs")),
+                ("mcp__agentboard__get_summary", None),
+                ("WebFetch", Some("https://example.com")),
+                ("Agent", None),
+            ],
+            "sin la envoltura exec"
+        );
+        // El subagente sin rol pedido es de tipo `default` y queda enlazado a su hilo.
+        assert!(recs.iter().any(|r| matches!(r, Record::ToolUse(t) if t.tool == "Agent" && t.detail.as_deref() == Some("default"))));
+        assert!(recs.iter().any(|r| matches!(r, Record::ToolResult { call_id, agent_id: Some(a), .. } if call_id == "call_sa" && a == "hijo-1")));
+        let errors: Vec<bool> = recs
+            .iter()
+            .filter_map(|r| match r {
+                Record::ToolResult { is_error, .. } => Some(*is_error),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            errors,
+            vec![true, false, false, true, false, false],
+            "cargo y el MCP fallaron"
+        );
+        // El comando duró 2,5 s: empieza 2,5 s antes de su item.
+        let bash = recs.iter().find_map(|r| match r {
+            Record::ToolUse(t) if t.tool == "Bash" => Some(t.ts),
+            _ => None,
+        });
+        assert_eq!(
+            bash,
+            Some(crate::providers::parse_ts("2026-09-27T16:00:02.500Z").unwrap())
+        );
+        assert!(recs
+            .iter()
+            .any(|r| matches!(r, Record::Event(e) if e.kind == "compaction")));
+        // El prompt del UserMessage da la intención del turno.
+        assert!(recs
+            .iter()
+            .any(|r| matches!(r, Record::Turn(t) if t.intent == Some("debug"))));
     }
 }

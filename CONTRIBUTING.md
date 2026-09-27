@@ -40,8 +40,8 @@ cargo test  --manifest-path src-tauri/Cargo.toml
 El servidor MCP se compila y prueba aparte:
 
 ```bash
-cargo build --manifest-path src-tauri/Cargo.toml --bin agentboard-mcp
-cargo test  --manifest-path src-tauri/Cargo.toml --bin agentboard-mcp
+cargo build --manifest-path src-tauri/Cargo.toml -p agentboard-mcp
+cargo test  --manifest-path src-tauri/Cargo.toml -p agentboard-mcp
 ```
 
 ## Estructura

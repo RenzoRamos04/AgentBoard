@@ -9,7 +9,7 @@ import type { DashboardData } from "../lib/useData";
 import { t } from "../lib/i18n";
 import { Bars, Columns, Legend, Segmented, ShareBar } from "../components/Charts";
 import { DataTable, type Column } from "../components/DataTable";
-import { barColumn, cost, dayPoints, err, errClass, shot, shotClass, startOfDay } from "./panels";
+import { barColumn, bucketing, cost, dayPoints, err, errClass, shot, shotClass } from "./panels";
 
 // --- Bloques genéricos ------------------------------------------------------------------
 
@@ -166,9 +166,10 @@ function EvolutionCard({
   const legend = ranked.slice(0, maxKeys).map(([key, t]) => ({ label: t.label, color: colors.get(key)! }));
   if (ranked.length > maxKeys) legend.push({ label: t("Otros"), color: "var(--text-muted)" });
 
+  const b = bucketing(data.daily, data.filter);
   const byDay = new Map<number, Map<string, { key: string; label: string; value: number; color: string }>>();
   for (const s of series) {
-    const day = startOfDay(s.ts);
+    const day = b.key(s.ts);
     const key = colors.has(s.key) ? s.key : "__otros";
     const map = byDay.get(day) ?? new Map();
     const cur = map.get(key) ?? { key, label: key === "__otros" ? t("Otros") : label(s), value: 0, color: colors.get(s.key) ?? "var(--text-muted)" };
@@ -185,7 +186,7 @@ function EvolutionCard({
       stack,
       tooltip: (
         <>
-          <b>{fmt.date(d.ts)}</b>
+          <b>{b.label(d.ts)}</b>
           <div>{format(value)}</div>
           {stack.slice(0, 6).map((s) => (
             <div key={s.key} className="muted">
@@ -274,11 +275,14 @@ export function ActivityFull({ data }: { data: DashboardData }) {
     { header: "1-shot", cell: (r) => shot(r.oneShot), align: "right", width: "60px", className: (r) => shotClass(r.oneShot) },
     barColumn(t("Reparto del coste"), rows, (r) => r.costUsd, "var(--act-coding)"),
   ];
+  const b = bucketing(data.daily, data.filter);
   const byDay = new Map<number, { key: string; label: string; value: number; color: string }[]>();
   for (const d of data.activityDaily) {
-    const day = startOfDay(d.ts);
+    const day = b.key(d.ts);
     const list = byDay.get(day) ?? [];
-    list.push({ key: d.activity, label: activityLabel(d.activity), value: get({ costUsd: d.costUsd, turns: d.turns }), color: activityColor(d.activity) });
+    const cur = list.find((x) => x.key === d.activity);
+    if (cur) cur.value += get({ costUsd: d.costUsd, turns: d.turns });
+    else list.push({ key: d.activity, label: activityLabel(d.activity), value: get({ costUsd: d.costUsd, turns: d.turns }), color: activityColor(d.activity) });
     byDay.set(day, list);
   }
   const points = dayPoints(data.daily, data.filter).map((d) => {
@@ -290,7 +294,7 @@ export function ActivityFull({ data }: { data: DashboardData }) {
       stack,
       tooltip: (
         <>
-          <b>{fmt.date(d.ts)}</b>
+          <b>{b.label(d.ts)}</b>
           <div>{format(value)}</div>
           {stack.slice(0, 5).map((s) => (
             <div key={s.key} className="muted">
@@ -375,7 +379,7 @@ function UsesFull({ rows, header, plural, others, color, series, data, seriesTit
       </Card>
       <div className="grid-2">
         <RankingCard title={t("Ranking")} rows={rows} label={(r) => r.label} color={() => color} metrics={[M.uses, M.errorRate]} othersLabel={t(others)} />
-        <ShareCard title={t("Reparto de las llamadas")} rows={rows.slice(0, 8)} label={(r) => r.label} color={rc} metric={M.uses} />
+        <ShareCard title={t("Reparto de las llamadas")} rows={rows} label={(r) => r.label} color={rc} metric={M.uses} othersLabel={t(others)} />
       </div>
       {series && seriesTitle && <EvolutionCard title={t(seriesTitle)} series={series} data={data} color={(key) => rc({ key })} metrics={[{ value: "calls", label: "Llamadas" }]} />}
     </>
@@ -390,11 +394,18 @@ export const ShellFull = ({ data }: { data: DashboardData }) => (
 );
 export const McpFull = ({ data }: { data: DashboardData }) => <UsesFull rows={data.mcp} header="Servidor" plural="{n} servidores" others="Otros servidores" color="var(--series-magenta)" data={data} />;
 
-function CostUsesFull({ rows, header, usesHeader, color, hint, othersLabel = "Otros" }: { rows: BreakdownRow[]; header: string; usesHeader: string; color: string; hint?: string; othersLabel?: string }) {
+function CostUsesFull({ rows, header, usesHeader, color, hint, othersLabel = "Otros", agentName }: { rows: BreakdownRow[]; header: string; usesHeader: string; color: string; hint?: string; othersLabel?: string; agentName?: (id: string) => string }) {
   const rc = rowColor(rows);
   const usesMetric = { ...M.uses, label: usesHeader };
+  // Con filas de varios agentes (tipos de subagente), cada fila dice de qué agente es.
+  const withAgent = agentName && rows.some((r) => r.agent);
+  const kind = (r: BreakdownRow) => (r.label === "(sin tipo)" ? t(r.label) : r.label);
+  const label = (r: BreakdownRow) => (withAgent && r.agent ? `${kind(r)} · ${agentName!(r.agent)}` : r.label);
   const columns: Column<BreakdownRow>[] = [
-    { header: t(header), cell: (r) => <span className="with-dot"><i style={{ background: rc(r) }} />{r.label}</span> },
+    { header: t(header), cell: (r) => <span className="with-dot"><i style={{ background: rc(r) }} />{withAgent ? kind(r) : r.label}</span> },
+    ...(withAgent
+      ? [{ header: t("Agente"), cell: (r: BreakdownRow) => (r.agent ? <AgentTag id={r.agent} name={agentName!(r.agent)} /> : "–"), width: "minmax(120px, 0.7fr)" }]
+      : []),
     { header: t(usesHeader), cell: (r) => fmt.int(r.calls), align: "right" },
     { header: t("Coste"), cell: (r) => cost(r.costUsd), align: "right", className: "cost" },
     { header: t("$/uso"), cell: (r) => cost(r.calls ? r.costUsd / r.calls : 0), align: "right", width: "72px", className: "secondary" },
@@ -406,16 +417,30 @@ function CostUsesFull({ rows, header, usesHeader, color, hint, othersLabel = "Ot
         <DataTable rows={rows} rowKey={(r) => r.key} columns={columns} />
       </Card>
       <div className="grid-2">
-        <ShareCard title={t("Reparto del coste")} rows={rows} label={(r) => r.label} color={rc} metric={M.cost} />
-        <RankingCard title={t("Ranking")} rows={rows} label={(r) => r.label} color={rc} metrics={[M.cost, usesMetric]} othersLabel={t(othersLabel)} />
+        <ShareCard title={t("Reparto del coste")} rows={rows} label={label} color={rc} metric={M.cost} />
+        <RankingCard title={t("Ranking")} rows={rows} label={label} color={rc} metrics={[M.cost, usesMetric]} othersLabel={t(othersLabel)} />
       </div>
     </>
   );
 }
 
+/** Nombre y color de un agente a partir de su id. */
+export const AgentTag = ({ id, name }: { id: string; name: string }) => (
+  <span className="with-dot">
+    <i style={{ background: agentColor(id) }} />
+    {name}
+  </span>
+);
+
+/** Nombre de agente por id, con los agentes del panel (o el id si no está). */
+export const agentNamer = (data: DashboardData) => {
+  const names = new Map(data.agents.map((a) => [a.key, a.label]));
+  return (id: string) => names.get(id) ?? id;
+};
+
 export const SkillsFull = ({ data }: { data: DashboardData }) => (
   <CostUsesFull rows={data.skills} header="Skill / agente" usesHeader="Usos" color="var(--series-violet)" hint="coste de las respuestas del modelo que los invocaron" othersLabel="Otras skills y agentes" />
 );
 export const AgentTypesFull = ({ data }: { data: DashboardData }) => (
-  <CostUsesFull rows={data.agentTypes} header="Tipo" usesHeader="Llamadas" color="var(--series-blue)" hint="llamadas hechas dentro de subagentes, por tipo" othersLabel="Otros tipos" />
+  <CostUsesFull rows={data.agentTypes} header="Tipo" usesHeader="Llamadas" color="var(--series-blue)" hint="tipo = el subagente que eligió el agente al delegar una tarea (general, explore, code-reviewer…)" othersLabel="Otros tipos" agentName={agentNamer(data)} />
 );

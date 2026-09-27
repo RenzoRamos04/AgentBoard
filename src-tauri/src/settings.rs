@@ -16,6 +16,51 @@ pub struct Settings {
     pub language: String,
     /// Presupuesto mensual en USD; `None` = sin presupuesto.
     pub monthly_budget: Option<f64>,
+    /// Presupuesto del día local en USD; `None` = sin presupuesto.
+    pub daily_budget: Option<f64>,
+    /// Presupuestos mensuales de un proyecto o un agente.
+    pub budgets: Vec<ScopedBudget>,
+    /// Precios fijados por el usuario; sustituyen a los de por defecto del modelo.
+    pub price_overrides: Vec<PriceOverride>,
+    /// Avisar al llegar al 80 % de un presupuesto.
+    #[serde(default = "yes")]
+    pub alert_at_80: bool,
+    /// Avisar al llegar al 100 % de un presupuesto.
+    #[serde(default = "yes")]
+    pub alert_at_100: bool,
+    /// La bandeja muestra también el gasto de hoy.
+    pub tray_shows_today: bool,
+}
+
+fn yes() -> bool {
+    true
+}
+
+/// Presupuesto mensual acotado a un proyecto (`key` = raíz del repo) o a un agente (`key` = id).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScopedBudget {
+    /// `project` o `agent`.
+    pub kind: String,
+    pub key: String,
+    /// Nombre para mostrar (el proyecto o agente puede no estar cargado).
+    pub label: String,
+    pub monthly: f64,
+}
+
+/// Precio de un modelo en USD por millón de tokens.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PriceOverride {
+    pub model: String,
+    pub input: f64,
+    pub output: f64,
+    #[serde(default)]
+    pub cache_read: f64,
+    #[serde(default)]
+    pub cache_write: f64,
+    #[serde(default)]
+    pub cache_write_1h: f64,
 }
 
 fn default_theme() -> String {
@@ -28,6 +73,12 @@ impl Default for Settings {
             theme: default_theme(),
             language: default_theme(),
             monthly_budget: None,
+            daily_budget: None,
+            budgets: Vec::new(),
+            price_overrides: Vec::new(),
+            alert_at_80: true,
+            alert_at_100: true,
+            tray_shows_today: false,
         }
     }
 }
@@ -40,9 +91,45 @@ impl Settings {
         if !matches!(self.language.as_str(), "system" | "es" | "en" | "pt" | "fr") {
             bail!("idioma desconocido: {}", self.language);
         }
-        if let Some(b) = self.monthly_budget {
+        for b in [self.monthly_budget, self.daily_budget]
+            .into_iter()
+            .flatten()
+        {
             if !b.is_finite() || b < 0.0 {
                 bail!("el presupuesto debe ser un número mayor o igual que 0");
+            }
+        }
+        for b in &self.budgets {
+            if !matches!(b.kind.as_str(), "project" | "agent") {
+                bail!("tipo de presupuesto desconocido: {}", b.kind);
+            }
+            if b.key.trim().is_empty() {
+                bail!("el presupuesto necesita un proyecto o agente");
+            }
+            if !b.monthly.is_finite() || b.monthly <= 0.0 {
+                bail!("el presupuesto de {} debe ser mayor que 0", b.label);
+            }
+        }
+        let mut seen = std::collections::HashSet::new();
+        for p in &self.price_overrides {
+            if p.model.trim().is_empty() {
+                bail!("el precio necesita el nombre del modelo");
+            }
+            if !seen.insert(p.model.as_str()) {
+                bail!("el modelo {} tiene dos precios", p.model);
+            }
+            let values = [
+                p.input,
+                p.output,
+                p.cache_read,
+                p.cache_write,
+                p.cache_write_1h,
+            ];
+            if values.iter().any(|v| !v.is_finite() || *v < 0.0) {
+                bail!(
+                    "los precios de {} deben ser números mayores o iguales que 0",
+                    p.model
+                );
             }
         }
         Ok(())
@@ -94,6 +181,7 @@ mod tests {
                 theme: "light".into(),
                 language: "fr".into(),
                 monthly_budget: Some(50.0),
+                ..Default::default()
             },
         )
         .unwrap();
@@ -122,6 +210,65 @@ mod tests {
             }
         )
         .is_err());
+    }
+
+    #[test]
+    fn presupuestos_y_precios_del_usuario() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        let price = PriceOverride {
+            model: "kimi-k2".into(),
+            input: 1.0,
+            output: 4.0,
+            cache_read: 0.1,
+            cache_write: 0.0,
+            cache_write_1h: 0.0,
+        };
+        let s = Settings {
+            daily_budget: Some(30.0),
+            budgets: vec![ScopedBudget {
+                kind: "agent".into(),
+                key: "codex".into(),
+                label: "Codex CLI".into(),
+                monthly: 60.0,
+            }],
+            price_overrides: vec![price.clone()],
+            ..Default::default()
+        };
+        save_to(&path, &s).unwrap();
+        assert_eq!(load_from(&path), s);
+
+        let bad = |f: &dyn Fn(&mut Settings)| {
+            let mut x = s.clone();
+            f(&mut x);
+            save_to(&path, &x).is_err()
+        };
+        assert!(bad(&|x| x.price_overrides[0].input = -1.0));
+        assert!(bad(&|x| x.price_overrides.push(price.clone())));
+        assert!(bad(&|x| x.budgets[0].monthly = 0.0));
+        assert!(bad(&|x| x.budgets[0].kind = "rama".into()));
+        assert!(bad(&|x| x.daily_budget = Some(f64::NAN)));
+        assert_eq!(
+            load_from(&path),
+            s,
+            "un ajuste inválido no pisa el anterior"
+        );
+    }
+
+    #[test]
+    fn ajustes_antiguos_se_leen_sin_los_campos_nuevos() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        std::fs::write(
+            &path,
+            r#"{"theme":"dark","language":"es","monthlyBudget":40}"#,
+        )
+        .unwrap();
+        let s = load_from(&path);
+        assert_eq!(
+            (s.monthly_budget, s.daily_budget, s.budgets.len()),
+            (Some(40.0), None, 0)
+        );
     }
 
     #[test]

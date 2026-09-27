@@ -10,6 +10,14 @@ export interface Column<T> {
   align?: "left" | "right";
   /** Clase para colorear (`cost`, `accent`, `muted`). */
   className?: string | ((row: T) => string);
+  /** Valor por el que ordenar al pulsar la cabecera; sin él, la columna no se ordena. */
+  sort?: (row: T) => number | string;
+}
+
+export interface SortState {
+  /** Cabecera de la columna por la que se ordena. */
+  header: string;
+  dir: "asc" | "desc";
 }
 
 /** Al mostrar la lista completa, se pliega a estas filas con un botón para desplegar. */
@@ -25,6 +33,9 @@ export function DataTable<T>({
   onRowHover,
   onMore,
   collapse = COLLAPSE,
+  onRowClick,
+  defaultSort,
+  rowClassName,
 }: {
   rows: T[];
   rowKey: (row: T) => string;
@@ -36,9 +47,27 @@ export function DataTable<T>({
   onMore?: () => void;
   /** Sin `limit`, cuántas filas mostrar plegado (`false` para no plegar). */
   collapse?: number | false;
+  /** Hace la fila pulsable (clic o Enter). */
+  onRowClick?: (row: T) => void;
+  defaultSort?: SortState;
+  rowClassName?: (row: T) => string;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [sort, setSort] = useState<SortState | undefined>(defaultSort);
   if (!rows.length) return <Empty>{empty}</Empty>;
+
+  const sortCol = sort && columns.find((c) => c.header === sort.header && c.sort);
+  if (sortCol) {
+    const key = sortCol.sort!;
+    const sign = sort!.dir === "asc" ? 1 : -1;
+    rows = [...rows].sort((a, b) => {
+      const x = key(a);
+      const y = key(b);
+      return sign * (typeof x === "number" && typeof y === "number" ? x - y : String(x).localeCompare(String(y)));
+    });
+  }
+  const toggleSort = (c: Column<T>) =>
+    setSort((cur) => ({ header: c.header, dir: cur?.header === c.header && cur.dir === "desc" ? "asc" : "desc" }));
 
   // Con `limit` manda la vista de resumen; sin él, se pliega a `collapse` filas.
   const selfCollapse = limit == null && collapse !== false && rows.length > collapse;
@@ -46,12 +75,35 @@ export function DataTable<T>({
 
   const template = columns.map((c) => c.width ?? (c.align === "right" ? "72px" : "1fr")).join(" ");
   const cls = (c: Column<T>, r: T) => (typeof c.className === "function" ? c.className(r) : (c.className ?? ""));
+  // Suelo de ancho por columna: por debajo, la tabla hace scroll horizontal en vez de
+  // recortar datos (mínimo declarado de cada columna; ~96 px para las flexibles).
+  const minOf = (c: Column<T>) => {
+    const w = c.width ?? "";
+    const mm = w.match(/^minmax\((\d+(?:\.\d+)?)px/);
+    if (mm) return Number(mm[1]);
+    const px = w.match(/^(\d+(?:\.\d+)?)px$/);
+    if (px) return Number(px[1]);
+    return c.align === "right" ? 72 : 96;
+  };
+  const minWidth = columns.reduce((a, c) => a + minOf(c), 0) + 8 * (columns.length - 1) + 16;
   return (
-    <div className="table" role="table">
+    <div className="table" role="table" style={{ "--table-min": `${minWidth}px` } as React.CSSProperties}>
       <div className="table-head" role="row" style={{ gridTemplateColumns: template }}>
         {columns.map((c) => (
-          <span key={c.header} role="columnheader" className={c.align === "right" ? "right" : ""}>
-            {c.header}
+          <span
+            key={c.header}
+            role="columnheader"
+            className={c.align === "right" ? "right" : ""}
+            aria-sort={sort?.header === c.header ? (sort.dir === "asc" ? "ascending" : "descending") : undefined}
+          >
+            {c.sort ? (
+              <button type="button" className={`sort-button ${sort?.header === c.header ? "active" : ""}`} onClick={() => toggleSort(c)}>
+                {c.header}
+                {sort?.header === c.header && <span aria-hidden>{sort.dir === "asc" ? " ↑" : " ↓"}</span>}
+              </button>
+            ) : (
+              c.header
+            )}
           </span>
         ))}
       </div>
@@ -59,8 +111,11 @@ export function DataTable<T>({
         <div
           key={rowKey(r)}
           role="row"
-          className="table-row"
+          className={`table-row ${onRowClick ? "clickable" : ""} ${rowClassName?.(r) ?? ""}`}
           style={{ gridTemplateColumns: template }}
+          tabIndex={onRowClick ? 0 : undefined}
+          onClick={onRowClick ? () => onRowClick(r) : undefined}
+          onKeyDown={onRowClick ? (e) => e.key === "Enter" && onRowClick(r) : undefined}
           onMouseMove={onRowHover ? (e) => onRowHover(r, e) : undefined}
           onMouseLeave={onRowHover ? () => onRowHover(null) : undefined}
         >

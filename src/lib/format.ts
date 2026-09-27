@@ -11,8 +11,30 @@ export const fmt = {
   usd: (n: number) => (n !== 0 && Math.abs(n) < 0.01 ? usd4 : usd2).format(n),
   int: (n: number) => int.format(n),
   compact: (n: number) => compact.format(n),
+  /** Importe corto para las marcas de un eje: «$250», «$2.50», «$1.5K», «$15K». */
+  usdAxis: (n: number) =>
+    n >= 1000 ? `$${compact.format(n)}` : Number.isInteger(n) ? `$${n}` : `$${n.toFixed(2)}`,
   pct: (n: number) => pct.format(n),
   date: (ts: number) => new Date(ts).toLocaleDateString(locale(), { day: "numeric", month: "short", year: "numeric" }),
+  monthYear: (ts: number) => new Date(ts).toLocaleDateString(locale(), { month: "short", year: "numeric" }),
+  dateTime: (ts: number) =>
+    new Date(ts).toLocaleString(locale(), { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }),
+  time: (ts: number) => new Date(ts).toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit" }),
+  /** Duración legible: «< 1 min», «42 min», «2 h 35 min». */
+  duration: (ms: number) => {
+    const min = Math.round(ms / 60_000);
+    if (min < 1) return "< 1 min";
+    if (min < 60) return `${min} min`;
+    const h = Math.floor(min / 60);
+    return min % 60 ? `${h} h ${String(min % 60).padStart(2, "0")} min` : `${h} h`;
+  },
+  /** Milisegundos como «180 ms», «2.1 s», «2 m 10 s». */
+  ms: (ms: number) => {
+    if (ms < 1000) return `${Math.round(ms)} ms`;
+    if (ms < 60_000) return `${(ms / 1000).toFixed(ms < 10_000 ? 1 : 0)} s`;
+    const s = Math.round(ms / 1000);
+    return `${Math.floor(s / 60)} m ${String(s % 60).padStart(2, "0")} s`;
+  },
   day: (ts: number) => new Date(ts).toLocaleDateString(locale(), { day: "numeric", month: "short" }),
   bytes: (n: number) => {
     const units = ["B", "KB", "MB", "GB"];

@@ -8,7 +8,7 @@ AgentBoard ya sabe leer y agregar el uso de todos los agentes (coste, tokens, se
 
 - Nuevo binario `agentboard-mcp` en el mismo workspace de Cargo, que reutiliza `agentboard_lib` (providers + ingest + queries) y escanea los logs del disco a una base SQLite en memoria al arrancar. No necesita que la app esté abierta.
 - Habla el protocolo MCP por **stdio** (JSON-RPC 2.0): `initialize`, `tools/list`, `tools/call`. Cualquier agente puede lanzarlo como servidor MCP local.
-- Expone como herramientas MCP todo lo que hoy muestra el dashboard, con un filtro común (periodo, agentes, proyectos): resumen y costes, desgloses por agente/modelo/proyecto/actividad/herramientas/comandos/skills/MCP/subagentes, serie diaria y listados.
+- Expone como herramientas MCP todo lo que hoy muestra el dashboard, con un filtro común (periodo, agentes, proyectos y `no_project` para quedarse solo con las sesiones sin proyecto): resumen y costes, desgloses por agente/modelo/proyecto/actividad/herramientas/comandos/skills/MCP/subagentes, series diaria y horaria, precios por modelo con su origen, y listados.
 - Cada herramienta devuelve JSON estructurado (los mismos números que la interfaz).
 
 ## Non-goals

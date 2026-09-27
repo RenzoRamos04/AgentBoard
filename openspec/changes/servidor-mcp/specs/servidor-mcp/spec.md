@@ -29,7 +29,7 @@ El servidor SHALL escanear los logs de todos los agentes detectados a una base S
 - **THEN** responde a las consultas con los datos leídos de los logs del disco
 
 ### Requirement: Herramientas de consulta con filtro común
-El servidor SHALL exponer como herramientas MCP las mismas consultas que muestra el dashboard, aceptando un filtro común opcional de periodo (`7d`, `30d`, `60d`, `90d`, `all`), agentes y proyectos, y devolviendo JSON estructurado con los mismos valores que la interfaz.
+El servidor SHALL exponer como herramientas MCP las mismas consultas que muestra el dashboard, aceptando un filtro común opcional de periodo (`today`, `7d`, `30d`, `60d`, `90d`, `all`), agentes, proyectos y `no_project` (solo las sesiones sin proyecto), y devolviendo JSON estructurado con los mismos valores que la interfaz. Entre ellas SHALL ofrecer la serie temporal por día local (`get_daily`) y por hora local (`get_hourly`), y los precios por modelo con su origen (`get_prices`).
 
 #### Scenario: Resumen por periodo
 - **WHEN** el agente llama a `get_summary` con `period = "30d"`
@@ -43,9 +43,25 @@ El servidor SHALL exponer como herramientas MCP las mismas consultas que muestra
 - **WHEN** el agente pasa un filtro de agentes en una herramienta
 - **THEN** el resultado solo incluye la actividad de esos agentes
 
+#### Scenario: Sesiones sin proyecto
+- **WHEN** el agente pasa `no_project: true` en una herramienta
+- **THEN** el resultado solo incluye la actividad de las sesiones sin proyecto detectado
+
+#### Scenario: Serie por horas
+- **WHEN** el agente llama a `get_hourly` con `period = "today"`
+- **THEN** recibe un punto por hora local con coste, llamadas, sesiones y tokens
+
+#### Scenario: Precios por modelo
+- **WHEN** el agente llama a `get_prices`
+- **THEN** recibe cada modelo con sus precios (o sin ellos), su origen (`default`, `edited`, `reported` o `missing`) y sus llamadas y coste del periodo
+
 ### Requirement: Errores de herramienta controlados
 Si una herramienta recibe argumentos inválidos o falla la consulta, el servidor SHALL devolver un resultado de herramienta marcado como error con un mensaje legible, sin cerrar la conexión.
 
 #### Scenario: Periodo inválido
 - **WHEN** el agente pasa un `period` que no existe
 - **THEN** la herramienta devuelve un error legible y el servidor sigue atendiendo
+
+#### Scenario: Filtro mal tipado
+- **WHEN** el agente pasa `agents`, `projects` o `no_project` con un tipo que no corresponde
+- **THEN** la herramienta devuelve un error legible en vez de ampliar la consulta en silencio

@@ -1,11 +1,12 @@
 /** Periodos del filtro, calculados en hora local. */
-export type PeriodKind = "7d" | "30d" | "60d" | "90d" | "all";
+export type PeriodKind = "today" | "7d" | "30d" | "60d" | "90d" | "all";
 
 export interface Period {
   kind: PeriodKind;
 }
 
 export const PERIODS: { kind: PeriodKind; label: string; days?: number }[] = [
+  { kind: "today", label: "Hoy", days: 1 },
   { kind: "7d", label: "7 días", days: 7 },
   { kind: "30d", label: "30 días", days: 30 },
   { kind: "60d", label: "60 días", days: 60 },
@@ -29,4 +30,15 @@ export const daysInMonth = (now = new Date()) => new Date(now.getFullYear(), now
 export function projectMonth(spent: number, now = new Date()): number {
   const elapsed = now.getDate();
   return (spent / elapsed) * daysInMonth(now);
+}
+
+/**
+ * Periodo inmediatamente anterior, de la misma duración: los N días que terminan justo antes
+ * de que empiece el actual. `null` para «Todo», que no tiene anterior.
+ */
+export function previousRange(p: Period, now = new Date()): { from: number; to: number } | null {
+  const days = PERIODS.find((x) => x.kind === p.kind)?.days;
+  if (!days) return null;
+  const start = addDays(startOfDay(now), -(days - 1));
+  return { from: addDays(start, -days).getTime(), to: start.getTime() };
 }

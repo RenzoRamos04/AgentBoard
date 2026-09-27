@@ -7,6 +7,7 @@ export function Panel({
   title,
   question,
   onOpen,
+  openLabel,
   wide = false,
   children,
 }: {
@@ -14,6 +15,8 @@ export function Panel({
   title: string;
   question?: string;
   onOpen?: () => void;
+  /** Texto del enlace a la vista ampliada; por defecto «Ver más ›». */
+  openLabel?: string;
   wide?: boolean;
   children: ReactNode;
 }) {
@@ -29,7 +32,7 @@ export function Panel({
       {onOpen && (
         <footer className="panel-foot">
           <button className="link" onClick={onOpen}>
-            {t("Ver más ›")}
+            {openLabel ?? t("Ver más ›")}
           </button>
         </footer>
       )}

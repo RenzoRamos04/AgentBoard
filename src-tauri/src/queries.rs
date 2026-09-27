@@ -4,6 +4,7 @@ use anyhow::Result;
 use rusqlite::types::Value;
 use rusqlite::{params_from_iter, Connection};
 use serde::{Deserialize, Serialize};
+use std::collections::{BTreeMap, HashSet};
 
 /// Filtro común a todas las vistas. Vacío = vista general.
 #[derive(Debug, Default, Clone, Deserialize)]
@@ -17,6 +18,8 @@ pub struct Filter {
     pub agents: Option<Vec<String>>,
     /// Proyectos incluidos; `None` = todos.
     pub projects: Option<Vec<i64>>,
+    /// Solo las sesiones sin proyecto (el cubo «(sin proyecto)» del detalle).
+    pub no_project: bool,
 }
 
 impl Filter {
@@ -35,6 +38,9 @@ impl Filter {
         if let Some(agents) = &self.agents {
             conds.push(format!("s.agent_id IN ({})", placeholders(agents.len())));
             args.extend(agents.iter().cloned().map(Value::from));
+        }
+        if self.no_project {
+            conds.push("s.project_id IS NULL".to_string());
         }
         if let Some(projects) = &self.projects {
             // Un proyecto incluye todas las carpetas (worktrees) de su mismo repo.
@@ -154,41 +160,62 @@ pub struct Point {
     pub cache_write: i64,
 }
 
-/// Coste por día u hora local. `tz_offset_min` = minutos a sumar a UTC para la hora local.
-pub fn timeseries(
-    conn: &Connection,
-    f: &Filter,
-    bucket: &str,
-    tz_offset_min: i64,
-) -> Result<Vec<Point>> {
-    let size = if bucket == "hour" { HOUR_MS } else { DAY_MS };
-    let off = tz_offset_min * 60_000;
-    let (w, mut args) = f.sql("c.ts");
+/// Coste por día u hora local. `tz` es la zona IANA: cada fecha se agrupa con las reglas
+/// de horario de SU momento (verano/invierno), no con el desfase de hoy.
+pub fn timeseries(conn: &Connection, f: &Filter, bucket: &str, tz: &str) -> Result<Vec<Point>> {
+    let zone = crate::tz::parse(tz);
+    let hour = bucket == "hour";
+    let key = |ts: i64| {
+        if hour {
+            crate::tz::hour_start(ts, &zone)
+        } else {
+            crate::tz::day_start(ts, &zone)
+        }
+    };
+    let (w, args) = f.sql("c.ts");
     let sql = format!(
-        "SELECT ((c.ts + ?) / ?) * ? - ? AS b, SUM(c.cost_usd), COUNT(*),
-                COUNT(DISTINCT CASE WHEN s.is_subagent = 0 THEN c.session_id END),
-                SUM(c.input_tokens), SUM(c.output_tokens), SUM(c.cache_read), SUM(c.cache_write)
-         FROM call_costs c JOIN sessions s ON s.id = c.session_id WHERE {w}
-         GROUP BY b ORDER BY b"
+        "SELECT c.ts, c.cost_usd, c.input_tokens, c.output_tokens, c.cache_read, c.cache_write,
+                c.session_id, s.is_subagent
+         FROM call_costs c JOIN sessions s ON s.id = c.session_id WHERE {w}"
     );
-    let mut all: Vec<Value> = vec![off.into(), size.into(), size.into(), off.into()];
-    all.append(&mut args);
     let mut stmt = conn.prepare(&sql)?;
-    let rows = stmt
-        .query_map(params_from_iter(all.iter()), |r| {
-            Ok(Point {
-                ts: r.get(0)?,
-                cost_usd: r.get(1)?,
-                calls: r.get(2)?,
-                sessions: r.get(3)?,
-                input_tokens: r.get(4)?,
-                output_tokens: r.get(5)?,
-                cache_read: r.get(6)?,
-                cache_write: r.get(7)?,
-            })
-        })?
-        .collect::<rusqlite::Result<_>>()?;
-    Ok(rows)
+    let mut rows = stmt.query(params_from_iter(args.iter()))?;
+    let mut acc: BTreeMap<i64, (Point, HashSet<String>)> = BTreeMap::new();
+    while let Some(r) = rows.next()? {
+        let b = key(r.get(0)?);
+        let (p, sess) = acc.entry(b).or_insert_with(|| {
+            (
+                Point {
+                    ts: b,
+                    cost_usd: 0.0,
+                    calls: 0,
+                    sessions: 0,
+                    input_tokens: 0,
+                    output_tokens: 0,
+                    cache_read: 0,
+                    cache_write: 0,
+                },
+                HashSet::new(),
+            )
+        });
+        p.cost_usd += r.get::<_, f64>(1)?;
+        p.calls += 1;
+        p.input_tokens += r.get::<_, i64>(2)?;
+        p.output_tokens += r.get::<_, i64>(3)?;
+        p.cache_read += r.get::<_, i64>(4)?;
+        p.cache_write += r.get::<_, i64>(5)?;
+        // Sesiones distintas del cubo, sin subagentes.
+        if !r.get::<_, bool>(7)? {
+            sess.insert(r.get(6)?);
+        }
+    }
+    Ok(acc
+        .into_values()
+        .map(|(mut p, sess)| {
+            p.sessions = sess.len() as i64;
+            p
+        })
+        .collect())
 }
 
 #[derive(Debug, Serialize, PartialEq)]
@@ -202,81 +229,85 @@ pub struct SeriesPoint {
     pub output_tokens: i64,
 }
 
-/// Serie por día local y `agent | model | project | branch | tool` (esta última cuenta usos de
-/// herramienta, sin coste).
+/// Serie por día local y `agent | model | project | branch | tool` (esta última cuenta usos
+/// de herramienta, sin coste). Misma agrupación con zona histórica que `timeseries`.
 pub fn timeseries_by(
     conn: &Connection,
     f: &Filter,
     by: &str,
-    tz_offset_min: i64,
+    tz: &str,
 ) -> Result<Vec<SeriesPoint>> {
-    let off = tz_offset_min * 60_000;
-    if by == "tool" {
-        let (w, mut args) = f.sql("t.ts");
-        let sql = format!(
-            r"SELECT ((t.ts + ?) / ?) * ? - ? AS b, t.tool, t.tool, 0.0, COUNT(*), 0
-              FROM tool_calls t JOIN sessions s ON s.id = t.session_id
-              WHERE {w} AND t.tool NOT LIKE 'mcp\_\_%' ESCAPE '\'
-              GROUP BY b, t.tool ORDER BY b, 5 DESC"
-        );
-        let mut all: Vec<Value> = vec![off.into(), DAY_MS.into(), DAY_MS.into(), off.into()];
-        all.append(&mut args);
-        let mut stmt = conn.prepare(&sql)?;
-        let rows = stmt
-            .query_map(params_from_iter(all.iter()), |r| {
-                Ok(SeriesPoint {
-                    ts: r.get(0)?,
-                    key: r.get(1)?,
-                    label: r.get(2)?,
-                    cost_usd: r.get(3)?,
-                    calls: r.get(4)?,
-                    output_tokens: r.get(5)?,
-                })
-            })?
-            .collect::<rusqlite::Result<_>>()?;
-        return Ok(rows);
-    }
-    let (key, label, join) = match by {
-        "agent" => (
-            "s.agent_id",
-            "COALESCE(a.name, s.agent_id)",
-            "LEFT JOIN agents a ON a.id = s.agent_id",
-        ),
-        "model" => ("c.model", "c.model", ""),
-        "project" => (
-            "COALESCE(p.repo_root, '')",
-            "COALESCE(MIN(p.name), '(sin proyecto)')",
-            "LEFT JOIN projects p ON p.id = s.project_id",
-        ),
-        "branch" => (
-            "COALESCE(s.git_branch, '')",
-            "COALESCE(s.git_branch, '(sin rama)')",
-            "",
-        ),
-        other => anyhow::bail!("serie desconocida: {other}"),
+    let zone = crate::tz::parse(tz);
+    let mut acc: BTreeMap<(i64, String), SeriesPoint> = BTreeMap::new();
+    let mut add = |ts: i64, key: String, label: String, cost: f64, out: i64| {
+        let b = crate::tz::day_start(ts, &zone);
+        let e = acc.entry((b, key.clone())).or_insert_with(|| SeriesPoint {
+            ts: b,
+            key,
+            label: label.clone(),
+            cost_usd: 0.0,
+            calls: 0,
+            output_tokens: 0,
+        });
+        if label < e.label {
+            e.label = label; // determinista, como el MIN() del SQL de antes
+        }
+        e.cost_usd += cost;
+        e.calls += 1;
+        e.output_tokens += out;
     };
-    let (w, mut args) = f.sql("c.ts");
-    let sql = format!(
-        "SELECT ((c.ts + ?) / ?) * ? - ? AS b, {key}, {label}, SUM(c.cost_usd), COUNT(*), SUM(c.output_tokens)
-         FROM call_costs c JOIN sessions s ON s.id = c.session_id {join} WHERE {w}
-         GROUP BY b, {key} ORDER BY b, 4 DESC"
-    );
-    let mut all: Vec<Value> = vec![off.into(), DAY_MS.into(), DAY_MS.into(), off.into()];
-    all.append(&mut args);
-    let mut stmt = conn.prepare(&sql)?;
-    let rows = stmt
-        .query_map(params_from_iter(all.iter()), |r| {
-            Ok(SeriesPoint {
-                ts: r.get(0)?,
-                key: r.get(1)?,
-                label: r.get(2)?,
-                cost_usd: r.get(3)?,
-                calls: r.get(4)?,
-                output_tokens: r.get(5)?,
-            })
-        })?
-        .collect::<rusqlite::Result<_>>()?;
-    Ok(rows)
+    if by == "tool" {
+        let (w, args) = f.sql("t.ts");
+        let sql = format!(
+            r"SELECT t.ts, t.tool FROM tool_calls t JOIN sessions s ON s.id = t.session_id
+              WHERE {w} AND t.tool NOT LIKE 'mcp\_\_%' ESCAPE '\'"
+        );
+        let mut stmt = conn.prepare(&sql)?;
+        let mut rows = stmt.query(params_from_iter(args.iter()))?;
+        while let Some(r) = rows.next()? {
+            let tool: String = r.get(1)?;
+            add(r.get(0)?, tool.clone(), tool, 0.0, 0);
+        }
+    } else {
+        let (key, label, join) = match by {
+            "agent" => (
+                "s.agent_id",
+                "COALESCE(a.name, s.agent_id)",
+                "LEFT JOIN agents a ON a.id = s.agent_id",
+            ),
+            "model" => ("c.model", "c.model", ""),
+            "project" => (
+                "COALESCE(p.repo_root, '')",
+                "COALESCE(p.name, '(sin proyecto)')",
+                "LEFT JOIN projects p ON p.id = s.project_id",
+            ),
+            "branch" => (
+                "COALESCE(s.git_branch, '')",
+                "COALESCE(s.git_branch, '(sin rama)')",
+                "",
+            ),
+            other => anyhow::bail!("serie desconocida: {other}"),
+        };
+        let (w, args) = f.sql("c.ts");
+        let sql = format!(
+            "SELECT c.ts, {key}, {label}, c.cost_usd, c.output_tokens
+             FROM call_costs c JOIN sessions s ON s.id = c.session_id {join} WHERE {w}"
+        );
+        let mut stmt = conn.prepare(&sql)?;
+        let mut rows = stmt.query(params_from_iter(args.iter()))?;
+        while let Some(r) = rows.next()? {
+            add(r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?);
+        }
+    }
+    // Como antes: por cubo y, dentro, lo más gastado (o usado) primero.
+    let mut out: Vec<SeriesPoint> = acc.into_values().collect();
+    out.sort_by(|a, b| {
+        a.ts.cmp(&b.ts)
+            .then(b.cost_usd.total_cmp(&a.cost_usd))
+            .then(b.calls.cmp(&a.calls))
+            .then(a.key.cmp(&b.key))
+    });
+    Ok(out)
 }
 
 #[derive(Debug, Serialize, PartialEq)]
@@ -292,6 +323,9 @@ pub struct BreakdownRow {
     pub sessions: i64,
     /// Media de tokens de contexto de la primera llamada de cada sesión.
     pub overhead_tokens: f64,
+    /// Agente al que pertenece la fila, en los desgloses que mezclan agentes (tipos de subagente).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent: Option<String>,
 }
 
 impl BreakdownRow {
@@ -307,6 +341,7 @@ impl BreakdownRow {
             has_price: true,
             sessions: 0,
             overhead_tokens: 0.0,
+            agent: None,
         }
     }
 }
@@ -385,6 +420,7 @@ pub fn breakdown(conn: &Connection, f: &Filter, by: &str) -> Result<Vec<Breakdow
                 has_price: r.get(7)?,
                 sessions: r.get(8)?,
                 overhead_tokens: r.get(9)?,
+                agent: None,
             })
         })?
         .collect::<rusqlite::Result<_>>()?;
@@ -610,12 +646,20 @@ mod tests {
     }
 
     #[test]
-    fn serie_diaria_en_hora_local() {
+    fn serie_diaria_agrupa_cada_fecha_con_su_horario() {
+        use chrono::{TimeZone, Utc};
         let conn = db::open_in_memory().unwrap();
         testdata::seed(&conn);
-        // 23:30 y 00:30 UTC del mismo día en UTC+2 → mismo día local.
-        let base = 20 * DAY_MS;
-        for (id, ts) in [("d1", base - 30 * 60_000), ("d2", base + 30 * 60_000)] {
+        // Enero es UTC+1 en Madrid y julio UTC+2: ambas llamadas son las 00:30 locales del 16.
+        let enero = Utc
+            .with_ymd_and_hms(2026, 1, 15, 23, 30, 0)
+            .unwrap()
+            .timestamp_millis();
+        let julio = Utc
+            .with_ymd_and_hms(2026, 7, 15, 22, 30, 0)
+            .unwrap()
+            .timestamp_millis();
+        for (id, ts) in [("d1", enero), ("d2", julio)] {
             conn.execute(
                 "INSERT INTO calls (message_id,session_id,ts,model) VALUES (?1,'s1',?2,'claude-sonnet-4-5')",
                 rusqlite::params![id, ts],
@@ -623,18 +667,19 @@ mod tests {
             .unwrap();
         }
         let f = Filter {
-            from: Some(base - DAY_MS),
+            from: Some(enero),
             ..Default::default()
         };
-        let local = timeseries(&conn, &f, "day", 120).unwrap();
-        assert_eq!(local.len(), 1);
+        let local = timeseries(&conn, &f, "day", "Europe/Madrid").unwrap();
+        // Cada día empieza en SU medianoche local expresada en UTC (23:00Z y 22:00Z del 15).
         assert_eq!(
-            local[0].ts,
-            base - 2 * HOUR_MS,
-            "medianoche local expresada en UTC"
+            local.iter().map(|p| p.ts).collect::<Vec<_>>(),
+            vec![enero - 1_800_000, julio - 1_800_000]
         );
-        let utc = timeseries(&conn, &f, "day", 0).unwrap();
+        // En UTC caen en el propio día 15.
+        let utc = timeseries(&conn, &f, "day", "UTC").unwrap();
         assert_eq!(utc.len(), 2);
+        assert_eq!(utc[0].ts, enero - enero.rem_euclid(86_400_000));
     }
 
     #[test]
@@ -664,16 +709,16 @@ mod tests {
     fn serie_diaria_por_agente() {
         let conn = db::open_in_memory().unwrap();
         testdata::seed(&conn);
-        let rows = timeseries_by(&conn, &Filter::default(), "agent", 0).unwrap();
+        let rows = timeseries_by(&conn, &Filter::default(), "agent", "UTC").unwrap();
         assert_eq!(rows.len(), 2, "un día, dos agentes");
         assert_eq!((rows[0].label.as_str(), rows[0].calls), ("Claude Code", 3));
-        let day = timeseries(&conn, &Filter::default(), "day", 0).unwrap();
+        let day = timeseries(&conn, &Filter::default(), "day", "UTC").unwrap();
         assert_eq!(
             (day[0].sessions, day[0].input_tokens, day[0].output_tokens),
             (3, 2_000_005, 100_005)
         );
-        assert!(timeseries_by(&conn, &Filter::default(), "nada", 0).is_err());
-        let projects = timeseries_by(&conn, &Filter::default(), "project", 0).unwrap();
+        assert!(timeseries_by(&conn, &Filter::default(), "nada", "UTC").is_err());
+        let projects = timeseries_by(&conn, &Filter::default(), "project", "UTC").unwrap();
         assert_eq!(
             projects
                 .iter()
@@ -682,7 +727,7 @@ mod tests {
             vec!["web", "api"]
         );
         conn.execute("INSERT INTO tool_calls (call_id,session_id,ts,tool) VALUES ('x1','s1',1000,'Bash'),('x2','s1',1000,'Bash'),('x3','s1',1000,'mcp__srv__t')", []).unwrap();
-        let tools = timeseries_by(&conn, &Filter::default(), "tool", 0).unwrap();
+        let tools = timeseries_by(&conn, &Filter::default(), "tool", "UTC").unwrap();
         assert_eq!(
             tools
                 .iter()
@@ -901,8 +946,9 @@ mod export_tests {
     }
 }
 
-/// Gasto acumulado del mes en curso y proyección lineal a fin de mes (hora local del sistema).
-pub fn month_progress(conn: &Connection, f: &Filter) -> Result<(f64, f64)> {
+/// Inicio del mes local en curso (epoch ms) y factor de proyección lineal a fin de mes
+/// (`días del mes / días transcurridos`).
+pub fn month_factor() -> (i64, f64) {
     use chrono::{Datelike, Local, TimeZone};
     let now = Local::now();
     let start = Local
@@ -910,11 +956,28 @@ pub fn month_progress(conn: &Connection, f: &Filter) -> Result<(f64, f64)> {
         .single()
         .map(|d| d.timestamp_millis())
         .unwrap_or(0);
+    let (y, m) = if now.month() == 12 {
+        (now.year() + 1, 1)
+    } else {
+        (now.year(), now.month() + 1)
+    };
+    let next = Local
+        .with_ymd_and_hms(y, m, 1, 0, 0, 0)
+        .single()
+        .map(|d| d.timestamp_millis())
+        .unwrap_or(start + 30 * DAY_MS);
+    let days_in_month = (next - start) as f64 / DAY_MS as f64;
+    let day = now.day() as f64;
+    (start, if day > 0.0 { days_in_month / day } else { 1.0 })
+}
+
+/// Gasto acumulado del mes en curso y proyección lineal a fin de mes (hora local del sistema).
+pub fn month_progress(conn: &Connection, f: &Filter) -> Result<(f64, f64)> {
+    let (start, factor) = month_factor();
     let month = Filter {
         from: Some(start),
         to: None,
-        agents: f.agents.clone(),
-        projects: f.projects.clone(),
+        ..f.clone()
     };
     let (w, args) = month.sql("c.ts");
     let spent: f64 = conn.query_row(
@@ -922,25 +985,5 @@ pub fn month_progress(conn: &Connection, f: &Filter) -> Result<(f64, f64)> {
         params_from_iter(args.iter()),
         |r| r.get(0),
     )?;
-    let day = now.day() as f64;
-    let days_in_month = {
-        let (y, m) = if now.month() == 12 {
-            (now.year() + 1, 1)
-        } else {
-            (now.year(), now.month() + 1)
-        };
-        (Local
-            .with_ymd_and_hms(y, m, 1, 0, 0, 0)
-            .single()
-            .unwrap()
-            .timestamp_millis()
-            - start) as f64
-            / 86_400_000.0
-    };
-    let projection = if day > 0.0 {
-        spent / day * days_in_month
-    } else {
-        spent
-    };
-    Ok((spent, projection))
+    Ok((spent, spent * factor))
 }

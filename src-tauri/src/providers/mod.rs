@@ -33,6 +33,18 @@ pub trait Provider: Send + Sync {
     }
     /// El archivo se va a leer desde el principio: descarta el estado que se guardara de él.
     fn reset(&self, _path: &Path) {}
+    /// ¿Conserva este proveedor lo necesario para seguir leyendo `path` a mitad del archivo?
+    /// Los que solo identifican la sesión en las primeras líneas devuelven `false` si no leyeron
+    /// ese principio (p. ej. otra instancia del proveedor): el archivo se relee entero.
+    fn knows(&self, _path: &Path) -> bool {
+        true
+    }
+
+    /// El archivo es un documento completo (p. ej. un `.json` con todo el historial), no un
+    /// log por líneas: se relee entero cuando cambia y se parsea de una sola vez.
+    fn whole_file(&self, _path: &Path) -> bool {
+        false
+    }
     /// Solo para `Source::Sqlite`: registros modificados después de `since` y el nuevo cursor.
     fn read_db(&self, _path: &Path, since: i64) -> Result<(Vec<Record>, i64)> {
         Ok((vec![], since))

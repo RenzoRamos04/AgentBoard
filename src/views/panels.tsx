@@ -10,6 +10,7 @@ import { t } from "../lib/i18n";
 import { Bars, Columns, InlineBar, Legend, LineChart, Segmented, ShareBar } from "../components/Charts";
 import { DataTable, type Column } from "../components/DataTable";
 import { ChartTitle, Split } from "../components/Panel";
+import { relDelta } from "../lib/delta";
 
 /** Columna con la barra de reparto integrada en la fila (no repite etiqueta ni cifra). */
 export function barColumn<T>(header: string, rows: T[], value: (r: T) => number, color: string): Column<T> {
@@ -42,25 +43,50 @@ export const startOfDay = (ts: number) => {
   const d = new Date(ts);
   return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
 };
+export const startOfMonth = (ts: number) => {
+  const d = new Date(ts);
+  return new Date(d.getFullYear(), d.getMonth(), 1).getTime();
+};
 
-/** Un punto por día del periodo, con los días sin actividad a cero, para que la línea temporal sea continua. */
-export function dayPoints(daily: Point[], filter: { from?: number; to?: number }) {
-  const byDay = new Map(daily.map((p) => [startOfDay(p.ts), p]));
+/** Cubo temporal del periodo: por día o, con más de ~400 días (p. ej. «Todo» con años de
+ *  historial), por mes natural. Así se representa todo el periodo sin recortar el total. */
+export function bucketing(daily: { ts: number }[], filter: { from?: number; to?: number }) {
   const today = startOfDay(Date.now());
   const first = daily.length ? startOfDay(daily[0].ts) : today;
-  let start = filter.from != null ? startOfDay(filter.from) : first;
-  let end = filter.to != null ? startOfDay(filter.to - 1) : today;
-  if (end - start > 400 * DAY) start = end - 400 * DAY; // "Todo" con años de historial: agrupar es cosa de la vista ampliada
+  const start = filter.from != null ? startOfDay(filter.from) : first;
+  const end = filter.to != null ? startOfDay(filter.to - 1) : today;
+  const monthly = end - start > 400 * DAY;
+  return {
+    monthly,
+    start: monthly ? startOfMonth(start) : start,
+    end,
+    key: monthly ? startOfMonth : startOfDay,
+    label: monthly ? fmt.monthYear : fmt.date,
+    next: (d: Date) => (monthly ? d.setMonth(d.getMonth() + 1) : d.setDate(d.getDate() + 1)),
+  };
+}
+
+/** Un punto por cubo del periodo (día o mes), con los huecos a cero para que la serie sea continua. */
+export function dayPoints(daily: Point[], filter: { from?: number; to?: number }) {
+  const b = bucketing(daily, filter);
+  const acc = new Map<number, { costUsd: number; calls: number }>();
+  for (const p of daily) {
+    const e = acc.get(b.key(p.ts)) ?? { costUsd: 0, calls: 0 };
+    e.costUsd += p.costUsd;
+    e.calls += p.calls;
+    acc.set(b.key(p.ts), e);
+  }
   const out = [];
-  for (let d = new Date(start); d.getTime() <= end; d.setDate(d.getDate() + 1)) {
+  for (let d = new Date(b.start); d.getTime() <= b.end; b.next(d)) {
     const ts = d.getTime();
-    const p = byDay.get(ts) ?? { ts, costUsd: 0, calls: 0 };
+    const p = acc.get(ts) ?? { costUsd: 0, calls: 0 };
     out.push({
       ts,
       value: p.costUsd,
+      monthly: b.monthly,
       tooltip: (
         <>
-          <b>{fmt.date(ts)}</b>
+          <b>{b.label(ts)}</b>
           <div>{cost(p.costUsd)}</div>
           <div className="muted">{fmt.int(p.calls)} llamadas</div>
         </>
@@ -96,7 +122,17 @@ export function DailyFull({ data }: { data: DashboardData }) {
   const [split, setSplit] = useState<DailySplit>("total");
   const m = metricOf(metric);
   const days = dayPoints(data.daily, data.filter);
-  const byDay = new Map(data.daily.map((p) => [startOfDay(p.ts), p]));
+  const b = bucketing(data.daily, data.filter);
+  // Totales por cubo (día o mes) para la métrica elegida.
+  const byDay = new Map<number, { costUsd: number; calls: number; sessions: number; outputTokens: number }>();
+  for (const p of data.daily) {
+    const e = byDay.get(b.key(p.ts)) ?? { costUsd: 0, calls: 0, sessions: 0, outputTokens: 0 };
+    e.costUsd += p.costUsd;
+    e.calls += p.calls;
+    e.sessions += p.sessions;
+    e.outputTokens += p.outputTokens;
+    byDay.set(b.key(p.ts), e);
+  }
 
   // Series apiladas por agente o actividad.
   const seriesByDay = new Map<number, { key: string; label: string; value: number; color: string }[]>();
@@ -106,18 +142,22 @@ export function DailyFull({ data }: { data: DashboardData }) {
     for (const s of data.dailyByAgent) {
       const color = agentColor(s.key, Math.max(order.indexOf(s.key), 0));
       legend.set(s.key, { label: s.label, color });
-      const list = seriesByDay.get(startOfDay(s.ts)) ?? [];
-      list.push({ key: s.key, label: s.label, value: m.value(s), color });
-      seriesByDay.set(startOfDay(s.ts), list);
+      const list = seriesByDay.get(b.key(s.ts)) ?? [];
+      const cur = list.find((x) => x.key === s.key);
+      if (cur) cur.value += m.value(s);
+      else list.push({ key: s.key, label: s.label, value: m.value(s), color });
+      seriesByDay.set(b.key(s.ts), list);
     }
   } else if (split === "activity") {
     for (const d of data.activityDaily) {
       const color = activityColor(d.activity);
       legend.set(d.activity, { label: activityLabel(d.activity), color });
-      const list = seriesByDay.get(startOfDay(d.ts)) ?? [];
+      const list = seriesByDay.get(b.key(d.ts)) ?? [];
       // La actividad se calcula por turno: coste o turnos (no hay tokens por actividad).
-      list.push({ key: d.activity, label: activityLabel(d.activity), value: metric === "cost" ? d.costUsd : d.turns, color });
-      seriesByDay.set(startOfDay(d.ts), list);
+      const cur = list.find((x) => x.key === d.activity);
+      if (cur) cur.value += metric === "cost" ? d.costUsd : d.turns;
+      else list.push({ key: d.activity, label: activityLabel(d.activity), value: metric === "cost" ? d.costUsd : d.turns, color });
+      seriesByDay.set(b.key(d.ts), list);
     }
   }
   const points = days.map((d) => {
@@ -130,9 +170,9 @@ export function DailyFull({ data }: { data: DashboardData }) {
       stack: split === "total" ? undefined : stack ?? [],
       tooltip: (
         <>
-          <b>{fmt.date(d.ts)}</b>
+          <b>{b.label(d.ts)}</b>
           <div>{m.format(value)}</div>
-          {p && split === "total" && (
+          {p && split === "total" && !b.monthly && (
             <div className="muted">
               {t("{n} llamadas", { n: fmt.int(p.calls) })} · {t("{n} sesiones", { n: fmt.int(p.sessions) })}
             </div>
@@ -158,9 +198,9 @@ export function DailyFull({ data }: { data: DashboardData }) {
       value: acc,
       tooltip: (
         <>
-          <b>{fmt.date(d.ts)}</b>
+          <b>{b.label(d.ts)}</b>
           <div>{t("Acumulado: {v}", { v: m.format(acc) })}</div>
-          <div className="muted">{t("Ese día: {v}", { v: m.format(p ? m.value(p) : 0) })}</div>
+          <div className="muted">{t(b.monthly ? "Ese mes: {v}" : "Ese día: {v}", { v: m.format(p ? m.value(p) : 0) })}</div>
         </>
       ),
     };
@@ -320,14 +360,31 @@ export function AgentPanel({ data, full }: PanelProps) {
 
 export function ProjectPanel({ data, full, singleProject }: PanelProps) {
   const rows = data.branches ?? data.projects;
+  const prevCost = data.prev ? new Map(data.prev.projects.map((r) => [r.key, r.costUsd])) : null;
   // En la vista general caben nombre, coste y sesiones; la ampliada añade media y overhead.
   const columns: Column<BreakdownRow>[] = [
     { header: t(singleProject ? "Rama" : "Proyecto"), cell: (r) => r.label },
     { header: t("Coste"), cell: (r) => cost(r.costUsd), align: "right", width: "68px", className: "cost" },
     ...(full ? [{ header: t("$/sesión"), cell: (r: BreakdownRow) => cost(r.sessions ? r.costUsd / r.sessions : 0), align: "right" as const, width: "68px" }] : []),
     { header: t("Ses"), cell: (r) => fmt.int(r.sessions), align: "right", width: "40px", className: "secondary" },
+    // Vista general con comparación: variación de coste frente al periodo anterior.
+    ...(!full && prevCost
+      ? [
+          {
+            header: t("vs. ant."),
+            cell: (r: BreakdownRow) => {
+              const d = relDelta(r.costUsd, prevCost.get(r.key) ?? 0, false);
+              return d ? t(d.text) : "–";
+            },
+            align: "right" as const,
+            width: "60px",
+            className: (r: BreakdownRow) => `num ${relDelta(r.costUsd, prevCost.get(r.key) ?? 0, false)?.tone ?? "muted"}`,
+          },
+        ]
+      : []),
     ...(full ? [{ header: t("Overhead"), cell: (r: BreakdownRow) => (r.overheadTokens ? fmt.compact(r.overheadTokens) : "–"), align: "right" as const, width: "70px", className: "accent" }] : []),
-    barColumn(t("Reparto del coste"), rows, (r) => r.costUsd, "var(--series-blue)"),
+    // En la tarjeta de la portada con comparación no cabe también la barra.
+    ...(full || !prevCost ? [barColumn(t("Reparto del coste"), rows, (r) => r.costUsd, "var(--series-blue)")] : []),
   ];
   return <DataTable rows={rows} rowKey={(r) => r.key} columns={columns} limit={full ? undefined : PREVIEW} />;
 }
@@ -420,8 +477,13 @@ export function ModelPanel({ data, full }: PanelProps) {
     { header: t("Coste"), cell: (r) => cost(r.costUsd), align: "right", width: "68px", className: "cost" },
     ...(full ? [{ header: t("Cache hit"), cell: (r: BreakdownRow) => (r.cacheHit ? fmt.pct(r.cacheHit) : "–"), align: "right" as const, width: "56px", className: "secondary" }] : []),
     { header: t("Llamadas"), cell: (r) => fmt.int(r.calls), align: "right", width: "60px" },
-    { header: "1-shot", cell: (r) => shot(oneShot.get(r.key)), align: "right", width: "56px", className: (r) => shotClass(oneShot.get(r.key)) },
-    barColumn(t("Reparto del coste"), rows, (r) => r.costUsd, "var(--series-violet)"),
+    // En la vista general (tarjeta estrecha) basta con nombre, coste, llamadas y caché.
+    ...(full
+      ? [
+          { header: "1-shot", cell: (r: BreakdownRow) => shot(oneShot.get(r.key)), align: "right" as const, width: "56px", className: (r: BreakdownRow) => shotClass(oneShot.get(r.key)) },
+          barColumn(t("Reparto del coste"), rows, (r) => r.costUsd, "var(--series-violet)"),
+        ]
+      : []),
   ];
   return <DataTable rows={rows} rowKey={(r) => r.key} columns={columns} limit={full ? undefined : PREVIEW} />;
 }
@@ -442,7 +504,7 @@ export const ToolsPanel = ({ data, full }: PanelProps) => <UsesPanel rows={data.
 export const ShellPanel = ({ data, full }: PanelProps) => <UsesPanel rows={data.commands} full={full} header="Comando" color="var(--series-yellow)" mono />;
 export const McpPanel = ({ data, full }: PanelProps) => <UsesPanel rows={data.mcp} full={full} header="Servidor" color="var(--series-magenta)" />;
 
-// --- Skills & Agents / Claude Agent Types (usos y coste) ---------------------------------
+// --- Skills & Agents / Agent Types (usos y coste) ---------------------------------
 
 function CostUsesPanel({ rows, full, header, usesHeader, color }: { rows: BreakdownRow[]; full: boolean; header: string; usesHeader: string; color: string }) {
   const columns: Column<BreakdownRow>[] = [
@@ -455,7 +517,29 @@ function CostUsesPanel({ rows, full, header, usesHeader, color }: { rows: Breakd
 }
 
 export const SkillsPanel = ({ data, full }: PanelProps) => <CostUsesPanel rows={data.skills} full={full} header="Skill / agente" usesHeader="Usos" color="var(--series-violet)" />;
-export const AgentTypesPanel = ({ data, full }: PanelProps) => <CostUsesPanel rows={data.agentTypes} full={full} header="Tipo" usesHeader="Llamadas" color="var(--series-blue)" />;
+export function AgentTypesPanel({ data, full }: PanelProps) {
+  const names = new Map(data.agents.map((a) => [a.key, a.label]));
+  const rows = data.agentTypes;
+  const columns: Column<BreakdownRow>[] = [
+    { header: t("Tipo"), cell: (r) => (r.label === "(sin tipo)" ? t(r.label) : r.label) },
+    {
+      header: t("Agente"),
+      cell: (r) =>
+        r.agent ? (
+          <span className="with-dot">
+            <i style={{ background: agentColor(r.agent) }} />
+            {names.get(r.agent) ?? r.agent}
+          </span>
+        ) : (
+          "–"
+        ),
+    },
+    { header: t("Llamadas"), cell: (r) => fmt.int(r.calls), align: "right", width: "64px" },
+    { header: t("Coste"), cell: (r) => cost(r.costUsd), align: "right", className: "cost" },
+    barColumn(t("Reparto del coste"), rows, (r) => r.costUsd, "var(--series-blue)"),
+  ];
+  return <DataTable rows={rows} rowKey={(r) => r.key} columns={columns} limit={full ? undefined : PREVIEW} />;
+}
 
 // --- Auxiliares --------------------------------------------------------------------
 

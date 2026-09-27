@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Empty } from "./Panel";
 import { useTooltip } from "./Tooltip";
 import { getLang, LOCALES, t } from "../lib/i18n";
+import { fmt } from "../lib/format";
 
 export interface BarItem {
   key: string;
@@ -24,7 +25,7 @@ export function Bars({ items, color = "var(--series-1)", limit, labelWidth = 84,
         <div
           key={i.key}
           className="bar-row"
-          style={{ gridTemplateColumns: `${labelWidth}px 1fr auto` }}
+          style={{ "--bar-label": `${labelWidth}px` } as React.CSSProperties}
           onMouseMove={i.tooltip ? (e) => setTip({ x: e.clientX, y: e.clientY, content: i.tooltip }) : undefined}
           onMouseLeave={i.tooltip ? () => setTip(null) : undefined}
         >
@@ -68,6 +69,22 @@ function useWidth<T extends HTMLElement>() {
   return [ref, w] as const;
 }
 
+/**
+ * Formato de las marcas de un eje: cortas para que quepan en su margen. Los importes pasan a
+ * «$250» / «$1.5K» y las cantidades a «1.5K»; `format` completo sigue en tooltips y en «máx.».
+ */
+export function tickFormat(format: (v: number) => string): (v: number) => string {
+  return format(1234.5).includes("$") ? fmt.usdAxis : (v: number) => (v >= 1000 ? fmt.compact(v) : format(v));
+}
+
+/** Paso «redondo» (1, 2, 2.5, 5 × 10ⁿ) mayor o igual que `raw`, para las marcas de un eje. */
+export function niceStep(raw: number): number {
+  if (!(raw > 0)) return 1;
+  const exp = Math.pow(10, Math.floor(Math.log10(raw)));
+  const f = raw / exp;
+  return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * exp;
+}
+
 /** Gráfico de columnas por día (o apilado por serie), con eje de fechas y tooltip. */
 export function Columns({
   points,
@@ -75,25 +92,53 @@ export function Columns({
   color = "var(--accent)",
   format,
   axis = (ts: number) => new Date(ts).toLocaleDateString(LOCALES[getLang()], { day: "numeric", month: "short" }),
+  compare,
+  yAxis = true,
 }: {
   points: ColumnPoint[];
   height?: number;
   color?: string;
   format: (v: number) => string;
   axis?: (ts: number) => string;
+  /** Valores de otro periodo alineados con `points`, pintados como línea discontinua. */
+  compare?: number[];
+  /** Eje de valores a la izquierda con líneas guía (por defecto, sí). */
+  yAxis?: boolean;
 }) {
   const setTip = useTooltip();
   const [ref] = useWidth<HTMLDivElement>();
   if (!points.length) return <Empty />;
-  const max = Math.max(...points.map((p) => p.value), 1e-12);
+  const rawMax = Math.max(...points.map((p) => p.value), ...(compare ?? []), 1e-12);
+  // Con eje, la escala llega a un múltiplo «redondo» para que las marcas sean legibles.
+  const step = yAxis ? niceStep(rawMax / 3) : 0;
+  const tick = tickFormat(format);
+  const max = yAxis ? Math.max(step * Math.ceil(rawMax / step), 1e-12) : rawMax;
   const px = (v: number) => Math.round((v / max) * height);
   const n = points.length;
+  const peak = points.reduce((a, b) => (b.value > a.value ? b : a), points[0]);
+  const line = compare?.length
+    ? compare
+        .slice(0, n)
+        .map((v, i) => `${(i + 0.5).toFixed(2)},${(height - (v / max) * height).toFixed(1)}`)
+        .join(" ")
+    : null;
   const mid = Math.floor(n / 2);
   const template = { gridTemplateColumns: `repeat(${n}, minmax(0, 1fr))` };
   return (
     <div className="columns" ref={ref}>
-      <div className="columns-max muted">{t("máx. {v}", { v: format(max) })}</div>
+      <div className="columns-max muted">{t("máx. {v} · {d}", { v: format(peak.value), d: axis(peak.ts) })}</div>
+      <div className={yAxis ? "columns-y" : ""}>
+      {yAxis && (
+        <div className="columns-y-axis muted num" style={{ height }} aria-hidden>
+          {Array.from({ length: Math.round(max / step) + 1 }, (_, i) => i * step).map((v) => (
+            <span key={v} style={{ top: `${(1 - v / max) * 100}%` }}>
+              {tick(v)}
+            </span>
+          ))}
+        </div>
+      )}
       <div className="columns-plot" style={{ height, ...template }}>
+        {yAxis && Array.from({ length: Math.round(max / step) }, (_, i) => (i + 1) * step).map((v) => <div key={v} className="columns-grid" style={{ bottom: `${(v / max) * 100}%` }} />)}
         {points.map((p) => (
           <div
             key={p.ts}
@@ -104,7 +149,8 @@ export function Columns({
           >
             {p.stack ? (
               <div className="column-stack">
-                {[...p.stack].reverse().map((s) => (
+                {/* Sin los segmentos de altura 0: si no, el redondeo de arriba o abajo cae en uno invisible. */}
+                {[...p.stack].reverse().filter((s) => px(s.value) > 0).map((s) => (
                   <div key={s.key} className="column-seg" style={{ height: px(s.value), background: s.color }} />
                 ))}
               </div>
@@ -113,8 +159,14 @@ export function Columns({
             )}
           </div>
         ))}
+        {line && (
+          <svg className="columns-compare" viewBox={`0 0 ${n} ${height}`} preserveAspectRatio="none" aria-hidden>
+            <polyline points={line} />
+          </svg>
+        )}
       </div>
-      <div className="columns-axis muted" style={template}>
+      </div>
+      <div className={`columns-axis muted ${yAxis ? "with-y" : ""}`} style={template}>
         {points.map((p, i) => (
           <span key={p.ts} className={i === 0 ? "first" : i === n - 1 ? "last" : ""}>
             {i === 0 || i === n - 1 || (n > 6 && i === mid) ? axis(p.ts) : ""}
@@ -132,20 +184,28 @@ export function LineChart({
   color = "var(--accent)",
   format,
   axis = (ts: number) => new Date(ts).toLocaleDateString(LOCALES[getLang()], { day: "numeric", month: "short" }),
+  markers,
 }: {
   points: { ts: number; value: number; tooltip?: ReactNode }[];
   height?: number;
   color?: string;
   format: (v: number) => string;
   axis?: (ts: number) => string;
+  /** Líneas verticales en la posición de un punto (p. ej. compactaciones de contexto). */
+  markers?: { index: number; label: string }[];
 }) {
   const setTip = useTooltip();
   const [ref, width] = useWidth<HTMLDivElement>();
   const [hover, setHover] = useState<number | null>(null);
   if (!points.length) return <Empty />;
-  const pad = { top: 12, right: 12, bottom: 4, left: 4 };
+  // Margen izquierdo para el eje de valores, con marcas «redondas» (menor si hay poco sitio).
+  const pad = { top: 12, right: 12, bottom: 4, left: width < 480 ? 46 : 60 };
   const w = Math.max(width, 100);
-  const max = Math.max(...points.map((p) => p.value), 1e-12);
+  const rawMax = Math.max(...points.map((p) => p.value), 1e-12);
+  const step = niceStep(rawMax / 3);
+  const tick = tickFormat(format);
+  const max = Math.max(step * Math.ceil(rawMax / step), 1e-12);
+  const ticks = Array.from({ length: Math.round(max / step) + 1 }, (_, i) => i * step);
   const iw = w - pad.left - pad.right;
   const ih = height - pad.top - pad.bottom;
   const x = (i: number) => pad.left + (points.length > 1 ? (i / (points.length - 1)) * iw : iw / 2);
@@ -162,13 +222,30 @@ export function LineChart({
   };
   return (
     <div className="linechart" ref={ref}>
-      <div className="columns-max muted">{t("máx. {v}", { v: format(max) })}</div>
+      <div className="columns-max muted">{t("máx. {v}", { v: format(rawMax) })}</div>
       <svg width={w} height={height} role="img" aria-label="Evolución">
-        {[0.25, 0.5, 0.75].map((f) => (
-          <line key={f} className="grid" x1={pad.left} x2={pad.left + iw} y1={y(max * f)} y2={y(max * f)} />
+        {ticks.map((v) => (
+          <g key={v}>
+            {v > 0 && <line className="grid" x1={pad.left} x2={pad.left + iw} y1={y(v)} y2={y(v)} />}
+            <text className="axis-label" x={pad.left - 8} y={y(v)} textAnchor="end" dominantBaseline="middle">
+              {tick(v)}
+            </text>
+          </g>
         ))}
+        <line className="baseline" x1={pad.left} x2={pad.left + iw} y1={y(0)} y2={y(0)} />
         <path d={area} fill={color} opacity={0.12} />
         <path d={path} fill="none" stroke={color} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+        {markers?.map((m, i) => (
+          <g key={i} className="marker">
+            <line x1={x(m.index)} x2={x(m.index)} y1={pad.top} y2={pad.top + ih} />
+            {/* Si dos marcas caen muy juntas, solo la primera lleva texto; cerca del borde derecho, va a la izquierda. */}
+            {(i === 0 || x(m.index) - x(markers[i - 1].index) >= (x(m.index) > pad.left + iw * 0.85 ? 170 : 85)) && (
+            <text x={x(m.index) > pad.left + iw * 0.85 ? x(m.index) - 4 : x(m.index) + 4} y={pad.top + 10} textAnchor={x(m.index) > pad.left + iw * 0.85 ? "end" : "start"}>
+              {m.label}
+            </text>
+            )}
+          </g>
+        ))}
         {hover != null && (
           <>
             <line className="crosshair" x1={x(hover)} x2={x(hover)} y1={pad.top} y2={pad.top + ih} />
@@ -188,7 +265,7 @@ export function LineChart({
           }}
         />
       </svg>
-      <div className="columns-axis muted" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
+      <div className="columns-axis muted with-y" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
         <span className="first">{axis(points[0].ts)}</span>
         <span style={{ gridColumn: 2 }}>{points.length > 2 ? axis(points[mid].ts) : ""}</span>
         <span className="last">{points.length > 1 ? axis(points[points.length - 1].ts) : ""}</span>
@@ -307,7 +384,9 @@ export function ShareBar({ segments, format, limit = 8, compact = false, othersL
           <div
             key={s.key}
             className="share-seg"
-            style={{ flexGrow: s.value, background: s.color }}
+            // Crece según su % del total: con valores absolutos que suman < 1 (p. ej. $0.29),
+            // flex solo repartiría esa fracción del ancho y la barra quedaría corta.
+            style={{ flexGrow: (s.value / total) * 100, background: s.color }}
             onMouseMove={(e) =>
               setTip({
                 x: e.clientX,

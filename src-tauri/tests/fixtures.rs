@@ -97,7 +97,7 @@ fn claude_code_fixture() {
     assert_eq!(activity.models.len(), 1);
     assert_eq!(activity.models[0].model, "claude-opus-5-5");
 
-    let daily = agentboard_lib::insights::activity_daily(&conn, &f, 0).unwrap();
+    let daily = agentboard_lib::insights::activity_daily(&conn, &f, "UTC").unwrap();
     assert_eq!(daily.len(), 2, "dos turnos, dos actividades, mismo día");
     assert!(
         daily.iter().all(|d| d.ts == 1_789_862_400_000),
@@ -126,7 +126,14 @@ fn claude_code_fixture() {
         "core tools sin MCP"
     );
     let agents = by("agent_type");
-    assert_eq!((agents[0].key.as_str(), agents[0].calls), ("Explore", 2));
+    assert_eq!(
+        (
+            agents[0].label.as_str(),
+            agents[0].agent.as_deref(),
+            agents[0].calls
+        ),
+        ("Explore", Some("claude-code"), 2)
+    );
     let projects = by("project");
     assert_eq!(projects[0].sessions, 1);
     assert_eq!(
@@ -216,11 +223,18 @@ fn opencode_fixture() {
         .unwrap();
     assert_eq!(name, "demo");
     let agents = queries::breakdown(&conn, &f, "agent_type").unwrap();
-    assert_eq!((agents[0].key.as_str(), agents[0].calls), ("explore", 1));
+    assert_eq!(
+        (
+            agents[0].label.as_str(),
+            agents[0].agent.as_deref(),
+            agents[0].calls
+        ),
+        ("explore", Some("opencode"), 1)
+    );
 
-    // Segunda pasada sin cambios: no se procesa nada ni se duplica.
+    // Segunda pasada sin cambios: solo se relee la ventana de solapamiento y no se duplica nada.
     let again = ingest::scan_all(&mut conn, &providers).unwrap();
-    assert_eq!(again.records, 0);
+    assert_eq!(again.errors, 0);
     assert_eq!(queries::summary(&conn, &f, 0).unwrap().calls, 3);
 }
 
@@ -443,6 +457,15 @@ fn gemini_fixture() {
     assert_eq!((i1.as_str(), i2.as_str()), ("debug", "brainstorm"));
     let name: String = conn.query_row("SELECT p.name FROM sessions s JOIN projects p ON p.id = s.project_id WHERE s.is_subagent = 0", [], |r| r.get(0)).unwrap();
     assert_eq!(name, "demo", "la carpeta llega por $set.directories");
+    // `invoke_agent` lanza el subagente: su tipo es `agent_name` y `agentId` enlaza el hilo.
+    let types = agentboard_lib::insights::agent_types(&conn, &f).unwrap();
+    assert_eq!(
+        types
+            .iter()
+            .map(|r| (r.label.as_str(), r.calls))
+            .collect::<Vec<_>>(),
+        vec![("codebase_investigator", 1)]
+    );
     conn.execute("DELETE FROM file_state", []).unwrap();
     ingest::scan_all(&mut conn, &providers).unwrap();
     assert_eq!(queries::summary(&conn, &f, 0).unwrap().calls, 4);
@@ -487,4 +510,136 @@ fn cursor_fixture() {
         .query_row("SELECT ts FROM turns ORDER BY ts LIMIT 1", [], |r| r.get(0))
         .unwrap();
     assert_eq!(ts, 1_790_257_920_000, "24 sep 2026 06:52 UTC-7 = 13:52 UTC");
+}
+
+// ---------------------------------------------------------------------------
+// Relectura en vivo: un log leído en dos pasadas, con proveedores distintos en cada una (como
+// el vigilante), debe dar lo mismo que leerlo de una vez. Codex, Gemini, Cursor y Copilot solo
+// identifican la sesión en sus primeras líneas.
+
+fn copy_dir(from: &std::path::Path, to: &std::path::Path) {
+    std::fs::create_dir_all(to).unwrap();
+    for e in std::fs::read_dir(from).unwrap().flatten() {
+        let dest = to.join(e.file_name());
+        if e.file_type().unwrap().is_dir() {
+            copy_dir(&e.path(), &dest);
+        } else {
+            std::fs::copy(e.path(), dest).unwrap();
+        }
+    }
+}
+
+fn biggest_jsonl(dir: &std::path::Path) -> PathBuf {
+    let mut best: Option<(u64, PathBuf)> = None;
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        for e in std::fs::read_dir(&d).unwrap().flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                stack.push(p);
+            } else if p.extension().is_some_and(|x| x == "jsonl") {
+                let len = p.metadata().unwrap().len();
+                if best.as_ref().is_none_or(|(l, _)| len > *l) {
+                    best = Some((len, p));
+                }
+            }
+        }
+    }
+    best.unwrap().1
+}
+
+fn totals(conn: &rusqlite::Connection) -> (i64, i64, i64, i64) {
+    let q = |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get(0)).unwrap() };
+    (
+        q("SELECT COUNT(*) FROM calls"),
+        q("SELECT COUNT(*) FROM sessions"),
+        q("SELECT COUNT(*) FROM tool_calls"),
+        q("SELECT COUNT(*) FROM turns"),
+    )
+}
+
+fn read_in_two_passes(fixture: &str, sub: &str, make: fn(Vec<PathBuf>) -> Box<dyn Provider>) {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join(sub);
+    copy_dir(&fixtures(fixture).join(sub), &root);
+
+    // Referencia: todo de una vez.
+    let mut whole = db::open_in_memory().unwrap();
+    let stats = ingest::scan_all(&mut whole, &[make(vec![root.clone()])]).unwrap();
+    assert_eq!(stats.errors, 0, "{fixture}: lectura completa");
+    let expected = totals(&whole);
+
+    // Primera pasada con el archivo a medias; la segunda, con otra instancia del proveedor.
+    let file = biggest_jsonl(&root);
+    let full = std::fs::read_to_string(&file).unwrap();
+    let lines: Vec<&str> = full.lines().collect();
+    let half = lines[..lines.len() / 2].join("\n") + "\n";
+    std::fs::write(&file, &half).unwrap();
+    let mut conn = db::open_in_memory().unwrap();
+    ingest::scan_all(&mut conn, &[make(vec![root.clone()])]).unwrap();
+    std::fs::write(&file, &full).unwrap();
+    let second = ingest::scan_all(&mut conn, &[make(vec![root.clone()])]).unwrap();
+    assert_eq!(
+        second.errors, 0,
+        "{fixture}: la segunda pasada no debe fallar"
+    );
+    assert_eq!(
+        totals(&conn),
+        expected,
+        "{fixture}: dos pasadas = una lectura completa"
+    );
+}
+
+#[test]
+fn relectura_en_dos_pasadas_de_agentes_con_estado() {
+    use agentboard_lib::providers::{
+        codex::Codex, copilot::Copilot, cursor::Cursor, gemini::Gemini,
+    };
+    read_in_two_passes("codex", "sessions", |r| Box::new(Codex::with_roots(r)));
+    read_in_two_passes("gemini", "tmp", |r| Box::new(Gemini::with_roots(r)));
+    read_in_two_passes("cursor", "projects", |r| Box::new(Cursor::with_roots(r)));
+    read_in_two_passes("copilot", "session-state", |r| {
+        Box::new(Copilot::with_roots(r))
+    });
+}
+
+#[test]
+fn opencode_no_pierde_filas_con_el_mismo_time_updated_que_el_cursor() {
+    use agentboard_lib::providers::opencode::OpenCode;
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("opencode");
+    std::fs::create_dir_all(&root).unwrap();
+    let db_path = root.join("opencode.db");
+    let sql = std::fs::read_to_string(fixtures("opencode").join("opencode.sql")).unwrap();
+    let oc = rusqlite::Connection::open(&db_path).unwrap();
+    oc.execute_batch(&sql).unwrap();
+
+    let providers: Vec<Box<dyn Provider>> =
+        vec![Box::new(OpenCode::with_roots(vec![root.clone()]))];
+    let mut conn = db::open_in_memory().unwrap();
+    ingest::scan_all(&mut conn, &providers).unwrap();
+    let calls = |c: &rusqlite::Connection| -> i64 {
+        c.query_row("SELECT COUNT(*) FROM calls", [], |r| r.get(0))
+            .unwrap()
+    };
+    let before = calls(&conn);
+
+    // Llega tarde un mensaje con el MISMO time_updated que la última fila ya leída (el cursor).
+    oc.execute_batch(
+        "INSERT INTO message (id, session_id, time_created, time_updated, data)
+         SELECT 'msg_tarde', session_id, time_created,
+                (SELECT MAX(t) FROM (SELECT MAX(time_updated) AS t FROM message UNION ALL SELECT MAX(time_updated) FROM part UNION ALL SELECT MAX(time_updated) FROM session)),
+                data
+         FROM message WHERE json_extract(data, '$.role') = 'assistant' LIMIT 1;",
+    )
+    .unwrap();
+    ingest::scan_all(&mut conn, &providers).unwrap();
+    assert_eq!(
+        calls(&conn),
+        before + 1,
+        "la fila con el mismo time_updated que el cursor no se pierde"
+    );
+    // Y releer la ventana de solapamiento no duplica.
+    ingest::scan_all(&mut conn, &providers).unwrap();
+    assert_eq!(calls(&conn), before + 1);
 }

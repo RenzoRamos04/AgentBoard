@@ -5,6 +5,7 @@ use crate::insights::{self, ActivityDay, ActivityReport};
 use crate::queries::{
     self, AgentRow, BreakdownRow, DataInfo, Filter, Point, ProjectRow, SeriesPoint, Summary,
 };
+use crate::sessions::{self, SessionDetail, SessionList};
 use crate::settings::{self, Settings};
 use rusqlite::Connection;
 use std::sync::{Arc, Mutex};
@@ -37,10 +38,10 @@ pub fn get_timeseries(
     state: tauri::State<AppState>,
     filter: Option<Filter>,
     bucket: String,
-    tz_offset_min: i64,
+    tz: String,
 ) -> CmdResult<Vec<Point>> {
     with_db(&state, |c| {
-        queries::timeseries(c, &filter.unwrap_or_default(), &bucket, tz_offset_min)
+        queries::timeseries(c, &filter.unwrap_or_default(), &bucket, &tz)
     })
 }
 
@@ -49,10 +50,10 @@ pub fn get_timeseries_by(
     state: tauri::State<AppState>,
     filter: Option<Filter>,
     by: String,
-    tz_offset_min: i64,
+    tz: String,
 ) -> CmdResult<Vec<SeriesPoint>> {
     with_db(&state, |c| {
-        queries::timeseries_by(c, &filter.unwrap_or_default(), &by, tz_offset_min)
+        queries::timeseries_by(c, &filter.unwrap_or_default(), &by, &tz)
     })
 }
 
@@ -81,10 +82,10 @@ pub fn get_activity(
 pub fn get_activity_daily(
     state: tauri::State<AppState>,
     filter: Option<Filter>,
-    tz_offset_min: i64,
+    tz: String,
 ) -> CmdResult<Vec<ActivityDay>> {
     with_db(&state, |c| {
-        insights::activity_daily(c, &filter.unwrap_or_default(), tz_offset_min)
+        insights::activity_daily(c, &filter.unwrap_or_default(), &tz)
     })
 }
 
@@ -125,6 +126,55 @@ pub fn export_data(
 }
 
 #[tauri::command]
+pub fn list_sessions(
+    state: tauri::State<AppState>,
+    filter: Option<Filter>,
+    limit: Option<usize>,
+) -> CmdResult<SessionList> {
+    with_db(&state, |c| {
+        sessions::list_sessions(c, &filter.unwrap_or_default(), limit)
+    })
+}
+
+#[tauri::command]
+pub fn list_project_summaries(
+    state: tauri::State<AppState>,
+    filter: Option<Filter>,
+) -> CmdResult<Vec<sessions::ProjectSummary>> {
+    with_db(&state, |c| {
+        sessions::list_projects(c, &filter.unwrap_or_default())
+    })
+}
+
+#[tauri::command]
+pub fn get_project_detail(
+    state: tauri::State<AppState>,
+    key: String,
+    filter: Option<Filter>,
+    tz: String,
+) -> CmdResult<sessions::ProjectDetail> {
+    with_db(&state, |c| {
+        sessions::project_detail(c, &key, &filter.unwrap_or_default(), &tz)
+    })
+}
+
+#[tauri::command]
+pub fn get_session_detail(state: tauri::State<AppState>, id: String) -> CmdResult<SessionDetail> {
+    with_db(&state, |c| sessions::session_detail(c, &id))
+}
+
+#[tauri::command]
+pub fn list_prices(
+    state: tauri::State<AppState>,
+    filter: Option<Filter>,
+) -> CmdResult<Vec<crate::pricing::PriceRow>> {
+    let overrides = settings::load().price_overrides;
+    with_db(&state, |c| {
+        crate::pricing::list_prices(c, &filter.unwrap_or_default(), &overrides)
+    })
+}
+
+#[tauri::command]
 pub fn get_settings() -> CmdResult<Settings> {
     Ok(settings::load())
 }
@@ -133,5 +183,10 @@ pub fn get_settings() -> CmdResult<Settings> {
 pub fn set_settings(state: tauri::State<AppState>, settings: Settings) -> CmdResult<Settings> {
     settings::save(&settings).map_err(|e| format!("{e:#}"))?;
     state.alerts.reset(); // al cambiar el presupuesto se vuelven a permitir los avisos
-    Ok(settings::load())
+    let saved = settings::load();
+    // Los precios del usuario recalculan los costes al momento (sin releer logs).
+    with_db(&state, |c| {
+        crate::pricing::apply_overrides(c, &saved.price_overrides)
+    })?;
+    Ok(saved)
 }

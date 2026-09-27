@@ -23,20 +23,24 @@ La barra lateral SHALL listar los agentes y proyectos presentes en la base, cada
 - **WHEN** el usuario escribe "agent" en el buscador de proyectos
 - **THEN** solo se listan los proyectos cuyo nombre contiene "agent", sin distinguir mayúsculas
 
-### Requirement: Periodos
-El sistema SHALL ofrecer los periodos Hoy, 7 días, 30 días, Mes (desde el día 1 del mes en curso), 6 meses, Todo y un rango personalizado, calculados en la zona horaria local.
-
-#### Scenario: Periodo "Hoy"
-- **WHEN** el usuario elige "Hoy" a las 15:00 hora local
-- **THEN** se incluyen las llamadas desde las 00:00 locales de hoy
-
-#### Scenario: Rango personalizado
-- **WHEN** el usuario elige del 1 al 10 de septiembre
-- **THEN** se incluyen las llamadas desde el 1 a las 00:00 hasta el 10 a las 23:59 locales
-
 ### Requirement: Información de datos
 La barra lateral SHALL mostrar la fecha del primer registro, el tamaño en disco de la base y el número de archivos de log vigilados.
 
 #### Scenario: Base con historial
 - **WHEN** la base contiene llamadas desde el 3 de agosto
 - **THEN** se muestra "Primer registro" con esa fecha
+
+### Requirement: Periodos disponibles
+El sistema SHALL ofrecer los periodos Hoy, 7 días, 30 días, 60 días, 90 días y Todo, calculados en la zona horaria local: cada periodo de N días incluye hoy y los N − 1 días anteriores desde las 00:00 locales. El periodo anterior de «Hoy», para comparar, SHALL ser ayer.
+
+#### Scenario: Periodo "Hoy"
+- **WHEN** el usuario elige "Hoy" a las 15:00 hora local
+- **THEN** se incluyen las llamadas desde las 00:00 locales de hoy
+
+#### Scenario: Comparar hoy con ayer
+- **WHEN** el periodo es "Hoy" y la comparación está activa
+- **THEN** las variaciones se calculan frente a ayer, de 00:00 a 24:00 locales
+
+#### Scenario: Periodo "Hoy" por MCP
+- **WHEN** un agente llama a una herramienta con `period: "today"`
+- **THEN** recibe solo los datos desde las 00:00 locales de hoy

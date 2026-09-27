@@ -1,7 +1,7 @@
 import { activityLabel, fmt, modelName } from "../lib/format";
 import { t } from "../lib/i18n";
 import type { Period } from "../lib/period";
-import { sectionOf, type SectionId } from "../lib/sections";
+import { sectionOf, type DetailSectionId } from "../lib/sections";
 import type { DashboardData } from "../lib/useData";
 import { Kpis, type Kpi } from "../components/Kpis";
 import { periodLabel } from "./Overview";
@@ -9,7 +9,7 @@ import { DailyFull } from "./panels";
 import { ActivityFull, AgentFull, AgentTypesFull, McpFull, ModelFull, ProjectFull, ShellFull, SkillsFull, ToolsFull } from "./sections";
 
 /** Tres cifras clave de cada apartado. */
-function sectionKpis(id: Exclude<SectionId, "overview">, data: DashboardData): Kpi[] {
+function sectionKpis(id: DetailSectionId, data: DashboardData): Kpi[] {
   const top = <T,>(rows: T[]): T | undefined => rows[0];
   const sum = (rows: { costUsd: number }[]) => rows.reduce((a, r) => a + r.costUsd, 0);
   const calls = (rows: { calls: number }[]) => rows.reduce((a, r) => a + r.calls, 0);
@@ -94,7 +94,7 @@ export function Section({
   singleProject,
   back,
 }: {
-  id: Exclude<SectionId, "overview">;
+  id: DetailSectionId;
   data: DashboardData;
   period: Period;
   singleProject: string | null;
@@ -112,7 +112,7 @@ export function Section({
           {title} <span className="muted">· {t(s.question)} · {periodLabel(period)}</span>
         </h1>
       </header>
-      <Kpis items={sectionKpis(id, data)} columns={3} />
+      <Kpis items={sectionKpis(id, data)} />
       {id === "daily" && <DailyFull data={data} />}
       {id === "agent" && <AgentFull data={data} />}
       {id === "project" && <ProjectFull data={data} singleProject={singleProject} />}

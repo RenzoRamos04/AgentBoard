@@ -24,6 +24,8 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 dirs = "5"
 anyhow = "1"
 chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
+chrono-tz = "0.10"
+iana-time-zone = "0.1"
 notify = "6"
 
 [dev-dependencies]

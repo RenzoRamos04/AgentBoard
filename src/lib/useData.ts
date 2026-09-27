@@ -27,10 +27,19 @@ export interface DashboardData {
   skills: BreakdownRow[];
   mcp: BreakdownRow[];
   agentTypes: BreakdownRow[];
+  /** Periodo anterior, solo con la comparación activa. */
+  prev: PrevData | null;
+}
+
+export interface PrevData {
+  filter: Filter;
+  summary: Summary;
+  daily: Point[];
+  projects: BreakdownRow[];
 }
 
 /** Carga todos los apartados para el filtro activo. */
-export function useDashboardData(filter: Filter, singleProject: string | null, refresh: number) {
+export function useDashboardData(filter: Filter, singleProject: string | null, refresh: number, prevFilter: Filter | null = null) {
   const [data, setData] = useState<DashboardData | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -59,17 +68,22 @@ export function useDashboardData(filter: Filter, singleProject: string | null, r
       by("skill"),
       by("mcp"),
       by("agent_type"),
+      prevFilter
+        ? Promise.all([api.summary(prevFilter), api.timeseries(prevFilter, "day"), api.breakdown(prevFilter, singleProject ? "branch" : "project")]).then(
+            ([summary, daily, projects]): PrevData => ({ filter: prevFilter, summary, daily, projects }),
+          )
+        : Promise.resolve(null),
     ])
-      .then(([summary, agents, daily, hourly, dailyByAgent, dailyByModel, dailyByProject, dailyByTool, month, projects, branches, models, activity, activityDaily, tools, commands, skills, mcp, agentTypes]) => {
+      .then(([summary, agents, daily, hourly, dailyByAgent, dailyByModel, dailyByProject, dailyByTool, month, projects, branches, models, activity, activityDaily, tools, commands, skills, mcp, agentTypes, prev]) => {
         if (!alive) return;
-        setData({ filter, summary, agents, daily, hourly, dailyByAgent, dailyByModel, dailyByProject, dailyByTool, month, projects, branches, models, activity, activityDaily, tools, commands, skills, mcp, agentTypes });
+        setData({ filter, summary, agents, daily, hourly, dailyByAgent, dailyByModel, dailyByProject, dailyByTool, month, projects, branches, models, activity, activityDaily, tools, commands, skills, mcp, agentTypes, prev });
         setError(null);
       })
       .catch((e) => alive && setError(String(e)));
     return () => {
       alive = false;
     };
-  }, [filter, singleProject, refresh]);
+  }, [filter, singleProject, refresh, prevFilter]);
 
   return { data, error };
 }

@@ -18,6 +18,12 @@ const PATHS: Record<SectionId, ReactElement> = {
     </>
   ),
   project: <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />,
+  projects: (
+    <>
+      <path d="M4 6h16M4 12h16M4 18h10" />
+      <circle cx="19" cy="18" r="2" />
+    </>
+  ),
   activity: (
     <>
       <circle cx="12" cy="12" r="9" />
@@ -37,6 +43,12 @@ const PATHS: Record<SectionId, ReactElement> = {
     <>
       <rect x="3" y="4" width="18" height="6" rx="2" />
       <rect x="3" y="14" width="18" height="6" rx="2" />
+    </>
+  ),
+  pricing: (
+    <>
+      <path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z" />
+      <circle cx="7.5" cy="7.5" r="1.5" />
     </>
   ),
   agents: (
@@ -73,5 +85,18 @@ export const GearIcon = () => (
   <svg {...base} width={15} height={15}>
     <circle cx="12" cy="12" r="3" />
     <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" />
+  </svg>
+);
+
+export const LockIcon = () => (
+  <svg {...base} width={14} height={14}>
+    <rect x="4" y="11" width="16" height="10" rx="2" />
+    <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+  </svg>
+);
+
+export const DownloadIcon = () => (
+  <svg {...base} width={15} height={15}>
+    <path d="M12 3v12M7 10l5 5 5-5M5 21h14" />
   </svg>
 );

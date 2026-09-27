@@ -8,6 +8,9 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+/// Ventana que se relee antes del cursor en cada lectura incremental (ms).
+const OVERLAP_MS: i64 = 2_000;
+
 #[derive(Default)]
 pub struct OpenCode {
     roots: Option<Vec<PathBuf>>,
@@ -220,6 +223,10 @@ impl Provider for OpenCode {
         .with_context(|| format!("no se pudo abrir {}", path.display()))?;
         let mut out = Vec::new();
         let mut cursor = since;
+        // Se relee un poco antes del cursor: OpenCode puede escribir otra fila con el mismo
+        // `time_updated` justo después de nuestra lectura (p. ej. subagentes en paralelo) y con
+        // `> cursor` se perdería. Releer es idempotente (todo va por id).
+        let from = if since > 0 { since - OVERLAP_MS } else { 0 };
         let mcp_servers = configured_mcp_servers();
 
         // Sesiones: carpeta y si son hijas (subagentes). Se cargan todas: son pocas y hacen
@@ -239,7 +246,7 @@ impl Provider for OpenCode {
         })? {
             let (id, dir, child, created, updated) = row?;
             sessions.insert(id.clone(), (dir.clone(), child, created));
-            if updated > since {
+            if updated > from {
                 cursor = cursor.max(updated);
                 out.push(Record::Session(SessionRec {
                     id,
@@ -254,7 +261,7 @@ impl Provider for OpenCode {
         // Mensajes nuevos o actualizados: assistant → llamada, user → turno.
         let mut stmt = conn.prepare("SELECT id, session_id, time_created, time_updated, data FROM message WHERE time_updated > ?1 ORDER BY time_created")?;
         let mut text_parts = conn.prepare("SELECT data FROM part WHERE message_id = ?1")?;
-        for row in stmt.query_map(params![since], |r| {
+        for row in stmt.query_map(params![from], |r| {
             Ok((
                 r.get::<_, String>(0)?,
                 r.get::<_, String>(1)?,
@@ -327,7 +334,7 @@ impl Provider for OpenCode {
 
         // Partes de herramienta nuevas o actualizadas.
         let mut stmt = conn.prepare("SELECT id, message_id, session_id, time_created, time_updated, data FROM part WHERE time_updated > ?1 ORDER BY time_created")?;
-        for row in stmt.query_map(params![since], |r| {
+        for row in stmt.query_map(params![from], |r| {
             Ok((
                 r.get::<_, String>(0)?,
                 r.get::<_, String>(1)?,

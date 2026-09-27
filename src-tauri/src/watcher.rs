@@ -55,40 +55,58 @@ fn run(
     })?;
 
     let mut watched: HashSet<PathBuf> = HashSet::new();
+    // Devuelve si añadió alguna carpeta nueva a la vigilancia.
     let watch_new = |watcher: &mut notify::RecommendedWatcher, watched: &mut HashSet<PathBuf>| {
+        let mut added = false;
         for root in existing_roots(&providers) {
             if watched.insert(root.clone()) {
-                if let Err(e) = watcher.watch(&root, RecursiveMode::Recursive) {
-                    eprintln!("agentboard: no se pudo vigilar {}: {e}", root.display());
-                    watched.remove(&root);
+                match watcher.watch(&root, RecursiveMode::Recursive) {
+                    Ok(()) => added = true,
+                    Err(e) => {
+                        eprintln!("agentboard: no se pudo vigilar {}: {e}", root.display());
+                        watched.remove(&root);
+                    }
                 }
             }
         }
+        added
     };
     watch_new(&mut watcher, &mut watched);
+    // Las mismas instancias en todas las relecturas: los proveedores con estado entre líneas
+    // (Codex, Gemini, Cursor, Copilot) lo conservan y no releen cada archivo entero.
+    let readers = providers();
+    let scan = |db: &Arc<Mutex<Connection>>| match db.lock() {
+        Ok(mut conn) => ingest::scan_all(&mut conn, &readers)
+            .map(|s| s.records)
+            .unwrap_or(0),
+        Err(_) => 0,
+    };
 
     loop {
         // Espera al primer evento (o revisa periódicamente si hay carpetas nuevas).
         match rx.recv_timeout(recheck) {
-            Ok(()) => {}
+            Ok(()) => {
+                // Agrupa la ráfaga: sigue drenando eventos hasta que haya DEBOUNCE de calma.
+                let start = Instant::now();
+                while rx.recv_timeout(DEBOUNCE).is_ok() && start.elapsed() < Duration::from_secs(5)
+                {
+                }
+            }
             Err(RecvTimeoutError::Timeout) => {
-                watch_new(&mut watcher, &mut watched);
-                continue;
+                // Una carpeta recién aparecida puede traer logs completos escritos antes de
+                // vigilarla (esos eventos ya se perdieron): hay que escanearla ahora.
+                if !watch_new(&mut watcher, &mut watched) {
+                    continue;
+                }
             }
             Err(RecvTimeoutError::Disconnected) => return Ok(()),
         }
-        // Agrupa la ráfaga: sigue drenando eventos hasta que haya DEBOUNCE de calma.
-        let start = Instant::now();
-        while rx.recv_timeout(DEBOUNCE).is_ok() && start.elapsed() < Duration::from_secs(5) {}
 
-        let scanned = match db.lock() {
-            Ok(mut conn) => ingest::scan_all(&mut conn, &providers())
-                .map(|s| s.records)
-                .unwrap_or(0),
-            Err(_) => 0,
-        };
-        // Puede haber aparecido una carpeta nueva durante la actividad.
-        watch_new(&mut watcher, &mut watched);
+        let mut scanned = scan(&db);
+        // Puede haber aparecido una carpeta nueva durante la actividad: se vigila y escanea ya.
+        if watch_new(&mut watcher, &mut watched) {
+            scanned += scan(&db);
+        }
         if scanned > 0 {
             on_change();
         }
@@ -105,6 +123,50 @@ mod tests {
     use crate::db;
     use crate::providers::claude_code::ClaudeCode;
     use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[test]
+    fn escanea_carpetas_que_aparecen_despues_de_arrancar() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("projects");
+        let db = Arc::new(Mutex::new(db::open_in_memory().unwrap()));
+        let root2 = root.clone();
+        let providers: Providers = Arc::new(move || {
+            vec![Box::new(ClaudeCode::with_roots(vec![root2.clone()])) as Box<dyn Provider>]
+        });
+        let db2 = db.clone();
+        let providers2 = providers.clone();
+        std::thread::spawn(move || {
+            let _ = run(db2, providers2, || {}, Duration::from_millis(100));
+        });
+        // La carpeta aún no existe cuando arranca el vigilante.
+        std::thread::sleep(Duration::from_millis(250));
+
+        // El agente crea su carpeta y termina de escribir antes de que nadie la vigile.
+        std::fs::create_dir_all(root.join("p")).unwrap();
+        std::fs::write(
+            root.join("p").join("s.jsonl"),
+            r#"{"type":"assistant","sessionId":"s1","timestamp":"2026-09-25T10:00:00Z","cwd":"/h/demo","message":{"model":"claude-sonnet-4-5","id":"m1","content":[],"usage":{"input_tokens":10,"output_tokens":5}}}"#
+                .to_string()
+                + "\n",
+        )
+        .unwrap();
+
+        let count = || {
+            db.lock()
+                .unwrap()
+                .query_row("SELECT COUNT(*) FROM calls", [], |r| r.get::<_, i64>(0))
+                .unwrap()
+        };
+        let mut ok = false;
+        for _ in 0..80 {
+            std::thread::sleep(Duration::from_millis(100));
+            if count() == 1 {
+                ok = true;
+                break;
+            }
+        }
+        assert!(ok, "no escaneó la carpeta descubierta en el rechequeo");
+    }
 
     #[test]
     fn relee_al_cambiar_un_log_sin_duplicar() {
