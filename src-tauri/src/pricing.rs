@@ -53,7 +53,38 @@ pub const DEFAULT_PRICES: &[(&str, f64, f64, f64, f64, f64)] = &[
     ("gemini-3-pro-preview", 2.0, 12.0, 0.20, 0.0, 0.0),
     ("gemini-3-pro", 2.0, 12.0, 0.20, 0.0, 0.0),
     ("gemini-3-flash", 0.50, 3.0, 0.05, 0.0, 0.0),
+    ("gemini-3.8-flash", 0.75, 3.75, 0.075, 0.0, 0.0),
 ];
+
+/// Precios que cambian en una fecha (epoch ms UTC): cada llamada usa el vigente en su día.
+/// (modelo, desde, entrada, salida, lectura de caché, escritura 5 min, escritura 1 h)
+pub const DATED_PRICES: &[(&str, i64, f64, f64, f64, f64, f64)] = &[
+    // Gemini 3.8 Flash dobla su precio el 1 de enero de 2027.
+    (
+        "gemini-3.8-flash",
+        1_798_761_600_000,
+        1.50,
+        7.50,
+        0.15,
+        0.0,
+        0.0,
+    ),
+];
+
+/// Inserta los precios por defecto (los de siempre y los que cambian en una fecha).
+fn insert_defaults(tx: &Connection) -> Result<()> {
+    let mut insert = tx.prepare(
+        "INSERT INTO prices (model, valid_from, input, output, cache_read, cache_write, cache_write_1h)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+    )?;
+    for (model, i, o, cr, cw, cw1h) in DEFAULT_PRICES {
+        insert.execute(params![model, 0, i, o, cr, cw, cw1h])?;
+    }
+    for (model, from, i, o, cr, cw, cw1h) in DATED_PRICES {
+        insert.execute(params![model, from, i, o, cr, cw, cw1h])?;
+    }
+    Ok(())
+}
 
 /// Carga los precios por defecto si la tabla está vacía.
 pub fn seed_if_empty(conn: &Connection) -> Result<()> {
@@ -62,15 +93,7 @@ pub fn seed_if_empty(conn: &Connection) -> Result<()> {
         return Ok(());
     }
     let tx = conn.unchecked_transaction()?;
-    {
-        let mut stmt = tx.prepare(
-            "INSERT INTO prices (model, valid_from, input, output, cache_read, cache_write, cache_write_1h)
-             VALUES (?1, 0, ?2, ?3, ?4, ?5, ?6)",
-        )?;
-        for (model, i, o, cr, cw, cw1h) in DEFAULT_PRICES {
-            stmt.execute(params![model, i, o, cr, cw, cw1h])?;
-        }
-    }
+    insert_defaults(&tx)?;
     tx.commit()?;
     Ok(())
 }
@@ -81,14 +104,12 @@ pub fn seed_if_empty(conn: &Connection) -> Result<()> {
 pub fn apply_overrides(conn: &Connection, overrides: &[PriceOverride]) -> Result<()> {
     let tx = conn.unchecked_transaction()?;
     tx.execute("DELETE FROM prices", [])?;
+    insert_defaults(&tx)?;
     {
         let mut insert = tx.prepare(
             "INSERT INTO prices (model, valid_from, input, output, cache_read, cache_write, cache_write_1h)
              VALUES (?1, 0, ?2, ?3, ?4, ?5, ?6)",
         )?;
-        for (model, i, o, cr, cw, cw1h) in DEFAULT_PRICES {
-            insert.execute(params![model, i, o, cr, cw, cw1h])?;
-        }
         let mut delete = tx.prepare("DELETE FROM prices WHERE model = ?1")?;
         for p in overrides {
             let model = normalize_model(&p.model);
@@ -421,5 +442,22 @@ mod tests {
         insert_call(&conn, "l", "gpt-6-luna", 1_000_000, 100_000);
         assert!((cost(&conn, "a") - 15.0).abs() < 1e-9);
         assert!((cost(&conn, "l") - 0.15).abs() < 1e-9);
+    }
+
+    #[test]
+    fn precio_con_fecha_de_gemini_3_8_flash() {
+        let conn = db::open_in_memory().unwrap();
+        insert_call(&conn, "a", "gemini-3.8-flash", 1_000_000, 0);
+        assert!((cost(&conn, "a") - 0.75).abs() < 1e-9, "2026: 0,75 USD/M");
+        // La misma llamada el 2 de enero de 2027 cuesta el doble.
+        conn.execute(
+            "UPDATE calls SET ts = 1798848000000 WHERE message_id = 'a'",
+            [],
+        )
+        .unwrap();
+        assert!((cost(&conn, "a") - 1.50).abs() < 1e-9, "2027: 1,50 USD/M");
+        // Y sobrevive a aplicar los precios del usuario.
+        apply_overrides(&conn, &[]).unwrap();
+        assert!((cost(&conn, "a") - 1.50).abs() < 1e-9);
     }
 }
