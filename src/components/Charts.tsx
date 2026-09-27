@@ -146,12 +146,15 @@ export function LineChart({
   color = "var(--accent)",
   format,
   axis = (ts: number) => new Date(ts).toLocaleDateString(LOCALES[getLang()], { day: "numeric", month: "short" }),
+  markers,
 }: {
   points: { ts: number; value: number; tooltip?: ReactNode }[];
   height?: number;
   color?: string;
   format: (v: number) => string;
   axis?: (ts: number) => string;
+  /** Líneas verticales en la posición de un punto (p. ej. compactaciones de contexto). */
+  markers?: { index: number; label: string }[];
 }) {
   const setTip = useTooltip();
   const [ref, width] = useWidth<HTMLDivElement>();
@@ -183,6 +186,15 @@ export function LineChart({
         ))}
         <path d={area} fill={color} opacity={0.12} />
         <path d={path} fill="none" stroke={color} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+        {markers?.map((m, i) => (
+          <g key={i} className="marker">
+            <line x1={x(m.index)} x2={x(m.index)} y1={pad.top} y2={pad.top + ih} />
+            {/* Cerca del borde derecho, la etiqueta va a la izquierda de la línea. */}
+            <text x={x(m.index) > pad.left + iw * 0.85 ? x(m.index) - 4 : x(m.index) + 4} y={pad.top + 10} textAnchor={x(m.index) > pad.left + iw * 0.85 ? "end" : "start"}>
+              {m.label}
+            </text>
+          </g>
+        ))}
         {hover != null && (
           <>
             <line className="crosshair" x1={x(hover)} x2={x(hover)} y1={pad.top} y2={pad.top + ih} />
