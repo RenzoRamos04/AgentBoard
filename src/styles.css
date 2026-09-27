@@ -541,3 +541,25 @@ kbd { font-family: var(--font-mono); font-size: 10px; color: var(--text-secondar
 .foot-stats { font-family: inherit; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .columns-grid { z-index: 0; }
 .columns-plot .column { position: relative; z-index: 1; }
+
+/* Proyectos */
+.agent-dots { display: inline-flex; align-items: center; gap: 4px; min-width: 0; }
+.agent-dots i { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
+.agent-dots span { margin-left: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stack { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+/* Nada se sale por la derecha: las tablas encogen dentro del panel. */
+.main { overflow-x: hidden; }
+.panel { min-width: 0; }
+.table { min-width: 0; overflow: hidden; }
+.grid-2.grid-start { grid-auto-rows: auto; align-items: start; }
+.kpi-value { font-size: clamp(16px, 1.45vw, 22px); }
+.short-label { display: none; }
+/* Ventanas estrechas: la barra superior se compacta en vez de salirse. */
+@media (max-width: 1420px) {
+  .topbar .long-label { display: none; }
+  .topbar .short-label { display: inline; }
+  .search-button { width: 32px; padding: 0; justify-content: center; }
+}
+@media (max-width: 1180px) {
+  .live span:last-child { display: none; }
+}

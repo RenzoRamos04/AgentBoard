@@ -137,7 +137,8 @@ export function Topbar(p: Props) {
         onClick={() => p.setCompare(!p.compare)}
       >
         <span className={`switch ${p.compare && p.canCompare ? "on" : ""}`} aria-hidden />
-        <span>{t("Comparar con periodo anterior")}</span>
+        <span className="long-label">{t("Comparar con periodo anterior")}</span>
+        <span className="short-label">{t("Comparar")}</span>
       </button>
 
       <div className="topbar-spacer" />
@@ -149,8 +150,8 @@ export function Topbar(p: Props) {
 
       <button type="button" className="chip-button search-button" onClick={p.onSearch} aria-label={t("Buscar")} aria-keyshortcuts="Control+K">
         <SearchIcon />
-        <span>{t("Buscar…")}</span>
-        <kbd>Ctrl K</kbd>
+        <span className="long-label">{t("Buscar…")}</span>
+        <kbd className="long-label">Ctrl K</kbd>
       </button>
 
       <Popover ariaLabel={t("Exportar")} align="right" chevron={false} className="icon-only" label={<DownloadIcon />}>
