@@ -141,6 +141,18 @@ fn run_tool(conn: &Connection, name: &str, args: &Value) -> Result<Value> {
             ingest::now_ms(),
             tz_offset(),
         )?)?),
+        "get_projects" => Ok(serde_json::to_value(sessions::list_projects(conn, &f()?)?)?),
+        "get_project_detail" => {
+            let key = args["key"]
+                .as_str()
+                .ok_or_else(|| anyhow!("falta el argumento key (de get_projects)"))?;
+            Ok(serde_json::to_value(sessions::project_detail(
+                conn,
+                key,
+                &f()?,
+                tz_offset(),
+            )?)?)
+        }
         "get_sessions" => {
             let limit = args["limit"].as_u64().map(|n| n as usize).unwrap_or(50);
             Ok(serde_json::to_value(sessions::list_sessions(
@@ -245,6 +257,13 @@ fn tools_list() -> Vec<Value> {
             schema["properties"]["limit"] = json!({ "type": "integer", "minimum": 1, "maximum": 500, "description": "Máximo de sesiones (las más recientes); por defecto, 50." });
             json!({ "name": "get_sessions", "description": "Sesiones del periodo, más recientes primero: agente, proyecto, rama, modelo principal, coste, turnos, compactaciones y errores de herramientas.", "inputSchema": schema })
         },
+        f("get_projects", "Proyectos del periodo (agrupados por repo), del más caro al más barato: agentes, ramas, modelo principal, sesiones, tiempo activo, turnos, compactaciones y coste."),
+        {
+            let mut schema = filter_schema();
+            schema["properties"]["key"] = json!({ "type": "string", "description": "Clave del proyecto (campo key de get_projects; \"\" = sin proyecto)." });
+            schema["required"] = json!(["key"]);
+            json!({ "name": "get_project_detail", "description": "Detalle de un proyecto: serie diaria, actividades, modelos, ramas, sus sesiones y latencia p50/p95 por herramienta.", "inputSchema": schema })
+        },
         json!({ "name": "get_session_detail", "description": "Detalle de una sesión: coste acumulado, compactaciones, turnos con su actividad y coste, modelos y latencia (p50/p95) por herramienta.", "inputSchema": { "type": "object", "properties": { "id": { "type": "string", "description": "Id de la sesión (de get_sessions)." } }, "required": ["id"] } }),
     ]
 }
@@ -281,7 +300,8 @@ mod tests {
     #[test]
     fn lista_todas_las_herramientas() {
         let tools = tools_list();
-        assert!(tools.len() >= 18);
+        assert!(tools.len() >= 20);
+        assert!(tools.iter().any(|t| t["name"] == "get_project_detail"));
         assert!(tools.iter().any(|t| t["name"] == "get_session_detail"));
         assert!(tools.iter().any(|t| t["name"] == "get_summary"));
         assert!(tools.iter().all(|t| t["inputSchema"].is_object()));

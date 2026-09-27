@@ -137,6 +137,28 @@ pub fn list_sessions(
 }
 
 #[tauri::command]
+pub fn list_project_summaries(
+    state: tauri::State<AppState>,
+    filter: Option<Filter>,
+) -> CmdResult<Vec<sessions::ProjectSummary>> {
+    with_db(&state, |c| {
+        sessions::list_projects(c, &filter.unwrap_or_default())
+    })
+}
+
+#[tauri::command]
+pub fn get_project_detail(
+    state: tauri::State<AppState>,
+    key: String,
+    filter: Option<Filter>,
+    tz_offset_min: i64,
+) -> CmdResult<sessions::ProjectDetail> {
+    with_db(&state, |c| {
+        sessions::project_detail(c, &key, &filter.unwrap_or_default(), tz_offset_min)
+    })
+}
+
+#[tauri::command]
 pub fn get_session_detail(state: tauri::State<AppState>, id: String) -> CmdResult<SessionDetail> {
     with_db(&state, |c| sessions::session_detail(c, &id))
 }

@@ -1,13 +1,14 @@
 //! Explorador de sesiones: listado con métricas por sesión y detalle de una sesión
 //! (coste acumulado, compactaciones, turnos, actividades, modelos y latencia de herramientas).
 
+use crate::insights::ActivityRow;
 use crate::insights::{classify_turn, TurnStats};
-use crate::queries::Filter;
+use crate::queries::{self, BreakdownRow, Filter, Point};
 use anyhow::{Context, Result};
 use rusqlite::types::Value;
 use rusqlite::{params, params_from_iter, Connection, OptionalExtension};
 use serde::Serialize;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 /// Máximo de sesiones que devuelve el listado (las más recientes).
 pub const MAX_SESSIONS: usize = 500;
@@ -41,6 +42,8 @@ pub struct SessionRow {
     pub subagent_calls: i64,
     /// La sesión entera es un subagente (Codex, OpenCode).
     pub is_subagent: bool,
+    /// Raíz del repositorio del proyecto (agrupa worktrees); `None` sin proyecto.
+    pub project_key: Option<String>,
 }
 
 #[derive(Debug, Serialize, PartialEq)]
@@ -86,7 +89,8 @@ fn query_sessions(
                 (SELECT COUNT(*) FROM turns t WHERE t.session_id = s.id),
                 (SELECT COUNT(*) FROM events e WHERE e.session_id = s.id AND e.kind = 'compaction'),
                 (SELECT COUNT(*) FROM tool_calls t WHERE t.session_id = s.id),
-                (SELECT COALESCE(SUM(t.is_error), 0) FROM tool_calls t WHERE t.session_id = s.id)
+                (SELECT COALESCE(SUM(t.is_error), 0) FROM tool_calls t WHERE t.session_id = s.id),
+                p.repo_root
          FROM sc JOIN sessions s ON s.id = sc.sid
          LEFT JOIN agents a ON a.id = s.agent_id
          LEFT JOIN projects p ON p.id = s.project_id
@@ -121,6 +125,7 @@ fn query_sessions(
                 compactions: r.get(18)?,
                 tool_calls: r.get(19)?,
                 tool_errors: r.get(20)?,
+                project_key: r.get(21)?,
             })
         })?
         .collect::<rusqlite::Result<_>>()?;
@@ -393,6 +398,293 @@ pub fn session_detail(conn: &Connection, id: &str) -> Result<SessionDetail> {
     })
 }
 
+// ---------------------------------------------------------------------------
+// Proyectos: las mismas métricas, agregadas por raíz de repositorio
+
+/// Tope de sesiones que se agregan en el listado de proyectos.
+const MAX_AGGREGATED: usize = 100_000;
+
+#[derive(Debug, Serialize, PartialEq, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentRef {
+    pub id: String,
+    pub name: String,
+}
+
+#[derive(Debug, Serialize, PartialEq, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectSummary {
+    /// Raíz del repositorio; `""` para las sesiones sin proyecto.
+    pub key: String,
+    /// Un id de proyecto de ese repo, para filtrar por él; `None` sin proyecto.
+    pub project_id: Option<i64>,
+    pub name: String,
+    pub path: Option<String>,
+    pub agents: Vec<AgentRef>,
+    pub branches: Vec<String>,
+    /// Modelo con más coste en el proyecto.
+    pub model: Option<String>,
+    /// Sesiones principales (sin contar las que son subagentes).
+    pub sessions: i64,
+    /// Suma de la duración de sus sesiones (ms).
+    pub active_ms: i64,
+    pub turns: i64,
+    pub compactions: i64,
+    pub tool_calls: i64,
+    pub tool_errors: i64,
+    pub subagent_calls: i64,
+    pub cost_usd: f64,
+    pub calls: i64,
+    pub cache_hit: f64,
+    pub has_price: bool,
+    pub first_ts: i64,
+    pub last_ts: i64,
+}
+
+/// Agrega sesiones en proyectos (por `project_key`), del más caro al más barato. El nombre de
+/// cada proyecto es el mismo que en By Project (`MIN(name)` de las carpetas del repo).
+fn summarize(
+    conn: &Connection,
+    rows: &[SessionRow],
+    top_model: &HashMap<String, String>,
+) -> Result<Vec<ProjectSummary>> {
+    /// Proyecto en construcción: sus cifras y lo que falta para cerrarlas.
+    struct Acc {
+        p: ProjectSummary,
+        branches: BTreeSet<String>,
+        /// id → nombre
+        agents: BTreeMap<String, String>,
+        cache_read: f64,
+        input: i64,
+    }
+    let mut acc: BTreeMap<String, Acc> = BTreeMap::new();
+    for r in rows {
+        let key = r.project_key.clone().unwrap_or_default();
+        let e = acc.entry(key.clone()).or_insert_with(|| Acc {
+            p: ProjectSummary {
+                key: key.clone(),
+                project_id: r.project_id,
+                name: r.project.clone().unwrap_or_else(|| "(sin proyecto)".into()),
+                path: r.project_key.clone(),
+                agents: Vec::new(),
+                branches: Vec::new(),
+                model: top_model.get(&key).cloned(),
+                sessions: 0,
+                active_ms: 0,
+                turns: 0,
+                compactions: 0,
+                tool_calls: 0,
+                tool_errors: 0,
+                subagent_calls: 0,
+                cost_usd: 0.0,
+                calls: 0,
+                cache_hit: 0.0,
+                has_price: true,
+                first_ts: r.started_at,
+                last_ts: r.ended_at,
+            },
+            branches: BTreeSet::new(),
+            agents: BTreeMap::new(),
+            cache_read: 0.0,
+            input: 0,
+        });
+        let Acc {
+            p,
+            branches,
+            agents,
+            cache_read,
+            input,
+        } = e;
+        // Para filtrar basta un id cualquiera del repo: el filtro incluye todos sus worktrees.
+        if r.project_id.is_some() && (p.project_id.is_none() || r.project_id < p.project_id) {
+            p.project_id = r.project_id;
+        }
+        if r.is_subagent {
+            p.subagent_calls += r.calls;
+        } else {
+            p.sessions += 1;
+            p.subagent_calls += r.subagent_calls;
+        }
+        p.active_ms += (r.ended_at - r.started_at).max(0);
+        p.turns += r.turns;
+        p.compactions += r.compactions;
+        p.tool_calls += r.tool_calls;
+        p.tool_errors += r.tool_errors;
+        p.cost_usd += r.cost_usd;
+        p.calls += r.calls;
+        p.has_price &= r.has_price;
+        p.first_ts = p.first_ts.min(r.started_at);
+        p.last_ts = p.last_ts.max(r.ended_at);
+        *cache_read += r.cache_hit * r.input_tokens as f64;
+        *input += r.input_tokens;
+        if let Some(b) = &r.branch {
+            branches.insert(b.clone());
+        }
+        agents.insert(r.agent_id.clone(), r.agent_name.clone());
+    }
+    let mut out: Vec<ProjectSummary> = acc
+        .into_values()
+        .map(
+            |Acc {
+                 mut p,
+                 branches,
+                 agents,
+                 cache_read,
+                 input,
+             }| {
+                p.branches = branches.into_iter().collect();
+                p.agents = agents
+                    .into_iter()
+                    .map(|(id, name)| AgentRef { id, name })
+                    .collect();
+                p.cache_hit = if input > 0 {
+                    cache_read / input as f64
+                } else {
+                    0.0
+                };
+                p
+            },
+        )
+        .collect();
+    for p in out.iter_mut().filter(|p| !p.key.is_empty()) {
+        if let Some(name) = conn
+            .query_row(
+                "SELECT MIN(name) FROM projects WHERE repo_root = ?1",
+                params![p.key],
+                |r| r.get::<_, Option<String>>(0),
+            )
+            .optional()?
+            .flatten()
+        {
+            p.name = name;
+        }
+    }
+    out.sort_by(|a, b| b.cost_usd.total_cmp(&a.cost_usd).then(a.name.cmp(&b.name)));
+    Ok(out)
+}
+
+/// Modelo con más coste de cada proyecto (clave = raíz del repo, `""` sin proyecto).
+fn top_models(conn: &Connection, f: &Filter) -> Result<HashMap<String, String>> {
+    let (w, args) = f.sql("c.ts");
+    let mut stmt = conn.prepare(&format!(
+        "SELECT COALESCE(p.repo_root, ''), c.model, SUM(c.cost_usd), COUNT(*)
+         FROM call_costs c JOIN sessions s ON s.id = c.session_id
+         LEFT JOIN projects p ON p.id = s.project_id
+         WHERE {w} GROUP BY 1, 2 ORDER BY 1, 3 DESC, 4 DESC, 2 DESC"
+    ))?;
+    let mut out = HashMap::new();
+    let mut rows = stmt.query(params_from_iter(args.iter()))?;
+    while let Some(r) = rows.next()? {
+        out.entry(r.get(0)?).or_insert(r.get(1)?);
+    }
+    Ok(out)
+}
+
+/// Proyectos con al menos una llamada en el filtro, con métricas de esas llamadas.
+pub fn list_projects(conn: &Connection, f: &Filter) -> Result<Vec<ProjectSummary>> {
+    let (w, args) = f.sql("c.ts");
+    let rows = query_sessions(conn, &w, &args, MAX_AGGREGATED)?;
+    summarize(conn, &rows, &top_models(conn, f)?)
+}
+
+#[derive(Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectDetail {
+    pub project: ProjectSummary,
+    pub daily: Vec<Point>,
+    pub activities: Vec<ActivityRow>,
+    pub models: Vec<BreakdownRow>,
+    pub branches: Vec<BreakdownRow>,
+    pub sessions: Vec<SessionRow>,
+    pub tools: Vec<ToolStat>,
+}
+
+/// Detalle de un proyecto (por su clave de `list_projects`) dentro del filtro.
+pub fn project_detail(
+    conn: &Connection,
+    key: &str,
+    f: &Filter,
+    tz_offset_min: i64,
+) -> Result<ProjectDetail> {
+    let (w, args) = f.sql("c.ts");
+    let (w, mut args) = if key.is_empty() {
+        (format!("{w} AND s.project_id IS NULL"), args)
+    } else {
+        (
+            format!("{w} AND s.project_id IN (SELECT id FROM projects WHERE repo_root = ?)"),
+            args,
+        )
+    };
+    if !key.is_empty() {
+        args.push(Value::from(key.to_string()));
+    }
+    let sessions = query_sessions(conn, &w, &args, MAX_AGGREGATED)?;
+    let project = summarize(conn, &sessions, &top_models(conn, f)?)?
+        .into_iter()
+        .find(|p| p.key == key)
+        .with_context(|| format!("no hay actividad del proyecto {key} en el periodo"))?;
+
+    // Las series y desgloses usan el filtro común acotado a ese proyecto (incluye sus worktrees).
+    let (daily, activities, models, branches) = match project.project_id {
+        Some(id) => {
+            let pf = Filter {
+                projects: Some(vec![id]),
+                ..f.clone()
+            };
+            (
+                queries::timeseries(conn, &pf, "day", tz_offset_min)?,
+                crate::insights::activity(conn, &pf)?.activities,
+                queries::breakdown(conn, &pf, "model")?,
+                queries::breakdown(conn, &pf, "branch")?,
+            )
+        }
+        None => (Vec::new(), Vec::new(), Vec::new(), Vec::new()),
+    };
+
+    // Latencia de herramientas de todas sus sesiones.
+    let ids: Vec<Value> = sessions.iter().map(|s| Value::from(s.id.clone())).collect();
+    let mut per_tool: BTreeMap<String, (i64, i64, Vec<i64>)> = BTreeMap::new();
+    for chunk in ids.chunks(500) {
+        let marks = vec!["?"; chunk.len()].join(",");
+        let mut stmt = conn.prepare(&format!(
+            "SELECT tool, is_error, duration_ms FROM tool_calls WHERE session_id IN ({marks})"
+        ))?;
+        let mut rows = stmt.query(params_from_iter(chunk.iter()))?;
+        while let Some(r) = rows.next()? {
+            let e = per_tool.entry(r.get(0)?).or_default();
+            e.0 += 1;
+            e.1 += r.get::<_, bool>(1)? as i64;
+            if let Some(d) = r.get::<_, Option<i64>>(2)? {
+                e.2.push(d);
+            }
+        }
+    }
+    let mut tools: Vec<ToolStat> = per_tool
+        .into_iter()
+        .map(|(tool, (calls, errors, mut d))| {
+            d.sort_unstable();
+            ToolStat {
+                tool,
+                calls,
+                errors,
+                p50_ms: percentile(&d, 50.0),
+                p95_ms: percentile(&d, 95.0),
+            }
+        })
+        .collect();
+    tools.sort_by(|a, b| b.calls.cmp(&a.calls).then(a.tool.cmp(&b.tool)));
+
+    Ok(ProjectDetail {
+        project,
+        daily,
+        activities,
+        models,
+        branches,
+        sessions,
+        tools,
+    })
+}
+
 /// `true` si existe una sesión con ese id (para errores claros en el servidor MCP).
 pub fn exists(conn: &Connection, id: &str) -> Result<bool> {
     Ok(conn
@@ -504,5 +796,49 @@ mod tests {
         assert_eq!(percentile(&v, 95.0), Some(100));
         assert_eq!(percentile(&[], 50.0), None);
         assert_eq!(percentile(&[7], 95.0), Some(7));
+    }
+
+    #[test]
+    fn proyectos_agregan_sesiones_y_worktrees() {
+        let conn = db::open_in_memory().unwrap();
+        seed_detail(&conn);
+        // Worktree del repo de «web» (/w) y una sesión sin proyecto.
+        conn.execute_batch(
+            "INSERT INTO projects (id,name,cwd,repo_root) VALUES (3,'web-feat','/w-feat','/w');
+             INSERT INTO sessions (id,agent_id,project_id,git_branch,started_at,ended_at) VALUES ('s4','codex',3,'feat',6000,7000),('s5','codex',NULL,NULL,8000,8000);
+             INSERT INTO calls (message_id,session_id,ts,model,input_tokens,output_tokens) VALUES ('m6','s4',6000,'claude-haiku-4-5',1000000,0),('m7','s5',8000,'claude-haiku-4-5',10,0);",
+        )
+        .unwrap();
+        let ps = list_projects(&conn, &Filter::default()).unwrap();
+        let web = ps.iter().find(|p| p.key == "/w").unwrap();
+        assert_eq!(web.name, "web", "nombre del repo, no del worktree");
+        assert_eq!(web.sessions, 3, "s1, s3 y el worktree s4");
+        // s1 5.5 + s3 0 (sin precio) + s4 1
+        assert!((web.cost_usd - 6.5).abs() < 1e-9);
+        assert_eq!(web.model.as_deref(), Some("claude-sonnet-4-5"));
+        assert_eq!(
+            web.agents.iter().map(|a| a.id.as_str()).collect::<Vec<_>>(),
+            vec!["claude-code", "codex"]
+        );
+        assert_eq!(web.branches, vec!["feat".to_string(), "main".to_string()]);
+        assert!(!web.has_price, "s3 usa un modelo sin precio");
+        assert_eq!(ps[0].key, "/w", "el más caro primero");
+        assert!(ps
+            .iter()
+            .any(|p| p.key.is_empty() && p.name == "(sin proyecto)"));
+    }
+
+    #[test]
+    fn detalle_de_proyecto() {
+        let conn = db::open_in_memory().unwrap();
+        seed_detail(&conn);
+        let d = project_detail(&conn, "/w", &Filter::default(), 0).unwrap();
+        assert_eq!(d.sessions.len(), 2);
+        assert_eq!(d.models[0].key, "claude-sonnet-4-5");
+        assert!(d.branches.iter().any(|b| b.key == "main"));
+        assert!(!d.daily.is_empty());
+        let bash = d.tools.iter().find(|t| t.tool == "Bash").unwrap();
+        assert_eq!((bash.calls, bash.errors), (2, 1));
+        assert!(project_detail(&conn, "/no-existe", &Filter::default(), 0).is_err());
     }
 }
