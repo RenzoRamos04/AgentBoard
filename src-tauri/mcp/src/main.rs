@@ -120,7 +120,11 @@ fn run_tool(conn: &Connection, name: &str, args: &Value) -> Result<Value> {
         "get_cost_by_model" => by("model"),
         "get_cost_by_project" => by("project"),
         "get_cost_by_branch" => by("branch"),
-        "get_activity" => by("activity"),
+        // La misma clasificación por turnos que el apartado By Activity (con 1-shot).
+        "get_activity" => Ok(serde_json::to_value(agentboard_lib::insights::activity(
+            conn,
+            &f()?,
+        )?)?),
         "get_tools" => by("tool"),
         "get_shell_commands" => by("command"),
         "get_skills" => by("skill"),
@@ -242,7 +246,7 @@ fn tools_list() -> Vec<Value> {
         f("get_cost_by_model", "Coste, llamadas y cache hit por modelo."),
         f("get_cost_by_project", "Coste, llamadas y overhead de contexto por proyecto."),
         f("get_cost_by_branch", "Coste y llamadas por rama de git."),
-        f("get_activity", "Reparto por tipo de actividad (coding, testing, debugging, exploración…)."),
+        f("get_activity", "Coste, turnos y 1-shot por tipo de actividad (coding, testing, debugging, exploración…), clasificando cada turno como el apartado By Activity."),
         f("get_tools", "Uso y número de errores por herramienta nativa (Bash, Read, Edit…)."),
         f("get_shell_commands", "Comandos de shell más ejecutados."),
         f("get_skills", "Skills y subagentes invocados."),
