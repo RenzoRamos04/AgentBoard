@@ -11,6 +11,7 @@ pub mod providers;
 pub mod queries;
 pub mod sessions;
 pub mod settings;
+pub mod tray;
 pub mod watcher;
 
 use alerts::Alerts;
@@ -40,13 +41,16 @@ pub fn run() {
             // Bandeja del sistema: gasto del mes en el tooltip y menú Mostrar / Salir.
             let tray = build_tray(app.handle())?;
 
-            // Refresca bandeja y avisos de presupuesto tras cada escaneo.
+            // Refresca la bandeja (tooltip y menú) y los avisos de presupuesto tras cada escaneo.
             let refresh_alerts = {
                 let app = app.handle().clone();
                 let db = db.clone();
                 let alerts = alerts.clone();
                 let tray = tray.clone();
-                move || alerts.refresh(&app, &db, &tray)
+                move || {
+                    alerts.refresh(&app, &db, &tray);
+                    tray::refresh(&app, &db, &tray);
+                }
             };
 
             // Escaneo inicial en segundo plano: lee los logs del ordenador a la base en memoria.
