@@ -263,6 +263,16 @@ fn output_is_error(output: &Value) -> bool {
                 return code != 0;
             }
         }
+        // Salida antigua en texto plano: «Process exited with code N\nFinal output:…».
+        if let Some(rest) = text.strip_prefix("Process exited with code ") {
+            let code: String = rest
+                .chars()
+                .take_while(|c| c.is_ascii_digit() || *c == '-')
+                .collect();
+            if let Ok(n) = code.parse::<i64>() {
+                return n != 0;
+            }
+        }
     }
     false
 }
@@ -572,6 +582,20 @@ fn push_call(out: &mut Vec<Record>, st: &FileState, message_id: String, usage: &
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn error_de_shell_en_texto_plano() {
+        use serde_json::json;
+        assert!(output_is_error(&json!(
+            "Process exited with code 1\nFinal output:\nfailed"
+        )));
+        assert!(!output_is_error(&json!("Process exited with code 0\nok")));
+        assert!(output_is_error(&json!("Process exited with code -1\n")));
+        assert!(!output_is_error(&json!(
+            "texto cualquiera con error dentro"
+        )));
+        assert!(output_is_error(&json!({"success": false})));
+    }
 
     #[test]
     fn objetivo_de_shell_y_parche() {
