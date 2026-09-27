@@ -18,26 +18,23 @@ export function todayRanges(now: number) {
 }
 
 /**
- * Sesiones que mostrar: todas las activas (llamadas en los últimos 15 min), la abierta más
- * recientemente primero; si no hay ninguna, la última usada. Así una sesión larga que sigue
- * escribiendo no tapa a la que se acaba de abrir en otro agente.
+ * La última sesión que se usó: entre las activas (llamadas en los últimos 15 min), la abierta
+ * más recientemente, para que una sesión larga que sigue escribiendo no tape a la que se acaba
+ * de abrir; si no hay ninguna activa, la de actividad más reciente.
  */
-export function currentSessions(rows: SessionRow[], now: number): { sessions: SessionRow[]; active: boolean } {
-  const active = rows.filter((s) => now - s.endedAt < ACTIVE_MS).sort((a, b) => b.startedAt - a.startedAt);
-  if (active.length) return { sessions: active, active: true };
+export function lastUsedSession(rows: SessionRow[], now: number): { session: SessionRow; active: boolean } | null {
+  const active = rows.filter((s) => now - s.endedAt < ACTIVE_MS);
+  if (active.length) return { session: active.reduce((a, b) => (b.startedAt > a.startedAt ? b : a)), active: true };
   const last = rows.reduce<SessionRow | null>((a, b) => (!a || b.endedAt > a.endedAt ? b : a), null);
-  return { sessions: last ? [last] : [], active: false };
+  return last ? { session: last, active: false } : null;
 }
-
-/** Sesiones activas visibles en la tarjeta; el resto se resume en «+N más». */
-const SHOWN = 3;
 
 interface Live {
   today: number;
   yesterday: number;
   burn: number;
   hours: Point[];
-  current: { sessions: SessionRow[]; active: boolean };
+  last: { session: SessionRow; active: boolean } | null;
 }
 
 /** «hace 3 min», «hace 2 h»… */
@@ -75,7 +72,7 @@ export function TodayLive({ filter, refresh, openSession }: { filter: Filter; re
         // Sin sesiones hoy, la última usada de los últimos 30 días.
         const rows = sessions.sessions.length ? sessions.sessions : (await api.sessions({ ...scope, from: at - 30 * DAY_MS }, 200)).sessions;
         if (!alive) return;
-        setLive({ today: s.costUsd, yesterday: y.costUsd, burn: s.burnRateUsdH, hours, current: currentSessions(rows, at) });
+        setLive({ today: s.costUsd, yesterday: y.costUsd, burn: s.burnRateUsdH, hours, last: lastUsedSession(rows, at) });
         setNow(at);
       })
       .catch(() => alive && setLive(null));
@@ -89,7 +86,7 @@ export function TodayLive({ filter, refresh, openSession }: { filter: Filter; re
   const delta = relDelta(live.today, live.yesterday, false);
   const byHour = Array.from({ length: 24 }, (_, h) => ({ ts: h, value: 0 }));
   for (const p of live.hours) byHour[new Date(p.ts).getHours()].value += p.costUsd;
-  const cur = live.current;
+  const l = live.last;
 
   return (
     <div className="today-live">
@@ -106,40 +103,31 @@ export function TodayLive({ filter, refresh, openSession }: { filter: Filter; re
         <span className="num">{fmt.usd(live.burn)}/h</span>
       </div>
       <div className="today-chart">
-        <Columns points={byHour} format={fmt.usd} height={cur.sessions.length > 1 ? 90 : 120} yAxis={false} axis={(h) => `${String(h).padStart(2, "0")}h`} />
+        <Columns points={byHour} format={fmt.usd} height={120} yAxis={false} axis={(h) => `${String(h).padStart(2, "0")}h`} />
       </div>
-      <div className={`today-session ${cur.active ? "active" : ""}`}>
-        {cur.sessions.length ? (
+      <div className={`today-session ${l?.active ? "active" : ""}`}>
+        {l ? (
           <>
             <div className="today-session-head">
-              <span className={`status-dot ${cur.active ? "on" : ""}`} />
-              <span>
-                {cur.active
-                  ? cur.sessions.length === 1
-                    ? t("Activa ahora")
-                    : t("{n} activas ahora", { n: cur.sessions.length })
-                  : t("Última sesión · {ago}", { ago: ago(now - cur.sessions[0].endedAt) })}
-              </span>
+              <span className={`status-dot ${l.active ? "on" : ""}`} />
+              <span>{l.active ? t("Activa ahora") : t("Última sesión · {ago}", { ago: ago(now - l.session.endedAt) })}</span>
             </div>
-            {cur.sessions.slice(0, SHOWN).map((x) => (
-              <button key={x.id} className="today-session-row" onClick={() => openSession(x.id)} title={x.model ? `${modelName(x.model)} · ${t("Ver la sesión ›")}` : t("Ver la sesión ›")}>
-                <span className="today-session-main">
-                  <span className="today-session-name">
-                    {x.project ?? t("(sin proyecto)")}
-                    {x.branch && <span className="muted"> · {x.branch}</span>}
-                  </span>
-                  <span className="with-dot muted small">
-                    <i style={{ background: agentColor(x.agentId) }} />
-                    {x.agentName} · {t("empezó {ago}", { ago: ago(now - x.startedAt) })}
-                  </span>
+            <button className="today-session-row" onClick={() => openSession(l.session.id)} title={l.session.model ? `${modelName(l.session.model)} · ${t("Ver la sesión ›")}` : t("Ver la sesión ›")}>
+              <span className="today-session-main">
+                <span className="today-session-name">
+                  {l.session.project ?? t("(sin proyecto)")}
+                  {l.session.branch && <span className="muted"> · {l.session.branch}</span>}
                 </span>
-                <span className="num cost">{fmt.usd(x.costUsd)}</span>
-                <span className="today-session-go" aria-hidden>
-                  ›
+                <span className="with-dot muted small">
+                  <i style={{ background: agentColor(l.session.agentId) }} />
+                  {l.session.agentName} · {t("empezó {ago}", { ago: ago(now - l.session.startedAt) })}
                 </span>
-              </button>
-            ))}
-            {cur.sessions.length > SHOWN && <span className="muted small">{t("+{n} más", { n: cur.sessions.length - SHOWN })}</span>}
+              </span>
+              <span className="num cost">{fmt.usd(l.session.costUsd)}</span>
+              <span className="today-session-go" aria-hidden>
+                ›
+              </span>
+            </button>
           </>
         ) : (
           <span className="muted">{t("Aún no hay sesiones.")}</span>

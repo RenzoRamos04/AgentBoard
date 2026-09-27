@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SessionRow } from "../../lib/api";
-import { ACTIVE_MS, currentSessions, todayRanges } from "../TodayLive";
+import { ACTIVE_MS, lastUsedSession, todayRanges } from "../TodayLive";
 
 describe("todayRanges", () => {
   it("hoy desde las 00:00 y ayer hasta la misma hora", () => {
@@ -12,21 +12,18 @@ describe("todayRanges", () => {
   });
 });
 
-describe("currentSessions", () => {
+describe("lastUsedSession", () => {
   const s = (id: string, startedAt: number, endedAt: number) => ({ id, startedAt, endedAt }) as SessionRow;
   const now = 100 * ACTIVE_MS;
-  it("con varias activas, todas y la abierta más recientemente primero", () => {
-    // Claude Code lleva horas escribiendo; Codex se acaba de abrir: Codex va primero.
+  it("con varias activas, solo la abierta más recientemente", () => {
+    // Claude Code lleva horas escribiendo; hay dos de Codex, la última abierta hace 1 min.
     const claude = s("claude", now - 28 * ACTIVE_MS, now - 1000);
-    const codex = s("codex", now - 60_000, now - 30_000);
-    const old = s("old", now - 50 * ACTIVE_MS, now - 30 * ACTIVE_MS);
-    const r = currentSessions([claude, old, codex], now);
-    expect(r.active).toBe(true);
-    expect(r.sessions.map((x) => x.id)).toEqual(["codex", "claude"]);
+    const codexOld = s("codex-1", now - 13 * 60_000, now - 60_000);
+    const codexNew = s("codex-2", now - 60_000, now - 30_000);
+    expect(lastUsedSession([claude, codexOld, codexNew], now)).toEqual({ session: codexNew, active: true });
   });
-  it("sin activas, la última usada", () => {
-    const r = currentSessions([s("a", 0, now - 5 * ACTIVE_MS), s("b", 0, now - 2 * ACTIVE_MS)], now);
-    expect(r).toEqual({ sessions: [s("b", 0, now - 2 * ACTIVE_MS)], active: false });
-    expect(currentSessions([], now)).toEqual({ sessions: [], active: false });
+  it("sin activas, la de actividad más reciente", () => {
+    expect(lastUsedSession([s("a", 0, now - 5 * ACTIVE_MS), s("b", 0, now - 2 * ACTIVE_MS)], now)).toEqual({ session: s("b", 0, now - 2 * ACTIVE_MS), active: false });
+    expect(lastUsedSession([], now)).toBeNull();
   });
 });
