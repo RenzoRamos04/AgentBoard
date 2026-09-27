@@ -3,6 +3,7 @@
 pub mod alerts;
 pub mod commands;
 pub mod db;
+pub mod findings;
 pub mod ingest;
 pub mod insights;
 pub mod pricing;
@@ -95,6 +96,7 @@ pub fn run() {
             commands::list_sessions,
             commands::get_session_detail,
             commands::list_prices,
+            commands::get_insights,
             commands::get_settings,
             commands::set_settings,
         ])
