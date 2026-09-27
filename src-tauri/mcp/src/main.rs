@@ -7,7 +7,7 @@
 //! Registro (ejemplo Claude Code):
 //!   claude mcp add agentboard -- /ruta/a/agentboard-mcp
 
-use agentboard_lib::{db, ingest, pricing, providers, queries, sessions, settings};
+use agentboard_lib::{db, findings, ingest, pricing, providers, queries, sessions, settings};
 use anyhow::{anyhow, bail, Result};
 use chrono::{Offset, Timelike};
 use rusqlite::Connection;
@@ -135,6 +135,12 @@ fn run_tool(conn: &Connection, name: &str, args: &Value) -> Result<Value> {
         "list_agents" => Ok(serde_json::to_value(queries::list_agents(conn, &f()?)?)?),
         "list_projects" => Ok(serde_json::to_value(queries::list_projects(conn, &f()?)?)?),
         "get_data_info" => Ok(serde_json::to_value(queries::data_info(conn)?)?),
+        "get_insights" => Ok(serde_json::to_value(findings::compute(
+            conn,
+            &f()?,
+            ingest::now_ms(),
+            tz_offset(),
+        )?)?),
         "get_sessions" => {
             let limit = args["limit"].as_u64().map(|n| n as usize).unwrap_or(50);
             Ok(serde_json::to_value(sessions::list_sessions(
@@ -230,6 +236,7 @@ fn tools_list() -> Vec<Value> {
         f("get_mcp_servers", "Servidores MCP usados y su actividad."),
         f("get_agent_types", "Tipos de subagente de Claude Code y su coste."),
         f("get_daily", "Serie diaria: coste, llamadas, sesiones y tokens por día."),
+        f("get_insights", "Avisos automáticos del periodo (compactaciones, modelo caro en tareas sencillas, herramientas que fallan, picos de gasto, caída del cache hit), del más grave al menos."),
         f("list_agents", "Agentes detectados en esta máquina, con su coste y carpeta de logs."),
         f("list_projects", "Proyectos detectados, con su coste."),
         json!({ "name": "get_data_info", "description": "Rango de fechas y totales del historial cargado.", "inputSchema": { "type": "object", "properties": {} } }),
@@ -274,7 +281,7 @@ mod tests {
     #[test]
     fn lista_todas_las_herramientas() {
         let tools = tools_list();
-        assert!(tools.len() >= 17);
+        assert!(tools.len() >= 18);
         assert!(tools.iter().any(|t| t["name"] == "get_session_detail"));
         assert!(tools.iter().any(|t| t["name"] == "get_summary"));
         assert!(tools.iter().all(|t| t["inputSchema"].is_object()));
