@@ -12,6 +12,7 @@ pub mod queries;
 pub mod sessions;
 pub mod settings;
 pub mod tray;
+pub mod tz;
 pub mod watcher;
 
 use alerts::Alerts;

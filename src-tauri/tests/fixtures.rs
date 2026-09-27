@@ -97,7 +97,7 @@ fn claude_code_fixture() {
     assert_eq!(activity.models.len(), 1);
     assert_eq!(activity.models[0].model, "claude-opus-5-5");
 
-    let daily = agentboard_lib::insights::activity_daily(&conn, &f, 0).unwrap();
+    let daily = agentboard_lib::insights::activity_daily(&conn, &f, "UTC").unwrap();
     assert_eq!(daily.len(), 2, "dos turnos, dos actividades, mismo día");
     assert!(
         daily.iter().all(|d| d.ts == 1_789_862_400_000),

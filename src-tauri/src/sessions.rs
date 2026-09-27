@@ -633,12 +633,7 @@ pub struct ProjectDetail {
 }
 
 /// Detalle de un proyecto (por su clave de `list_projects`) dentro del filtro.
-pub fn project_detail(
-    conn: &Connection,
-    key: &str,
-    f: &Filter,
-    tz_offset_min: i64,
-) -> Result<ProjectDetail> {
+pub fn project_detail(conn: &Connection, key: &str, f: &Filter, tz: &str) -> Result<ProjectDetail> {
     let (w, args) = f.sql("c.ts");
     let (w, mut args) = if key.is_empty() {
         (format!("{w} AND s.project_id IS NULL"), args)
@@ -670,7 +665,7 @@ pub fn project_detail(
         },
     };
     let (daily, activities, models, branches) = (
-        queries::timeseries(conn, &pf, "day", tz_offset_min)?,
+        queries::timeseries(conn, &pf, "day", tz)?,
         crate::insights::activity(conn, &pf)?.activities,
         queries::breakdown(conn, &pf, "model")?,
         queries::breakdown(conn, &pf, "branch")?,
@@ -788,7 +783,7 @@ mod tests {
                VALUES ('mn','sn',1500,'claude-sonnet-4-5',1000000,0);",
         )
         .unwrap();
-        let d = project_detail(&conn, "", &Filter::default(), 0).unwrap();
+        let d = project_detail(&conn, "", &Filter::default(), "UTC").unwrap();
         assert!(d.project.cost_usd > 0.0);
         assert!(!d.daily.is_empty(), "la serie diaria no puede venir vacía");
         assert!(!d.models.is_empty(), "el desglose de modelos tampoco");
@@ -895,13 +890,13 @@ mod tests {
     fn detalle_de_proyecto() {
         let conn = db::open_in_memory().unwrap();
         seed_detail(&conn);
-        let d = project_detail(&conn, "/w", &Filter::default(), 0).unwrap();
+        let d = project_detail(&conn, "/w", &Filter::default(), "UTC").unwrap();
         assert_eq!(d.sessions.len(), 2);
         assert_eq!(d.models[0].key, "claude-sonnet-4-5");
         assert!(d.branches.iter().any(|b| b.key == "main"));
         assert!(!d.daily.is_empty());
         let bash = d.tools.iter().find(|t| t.tool == "Bash").unwrap();
         assert_eq!((bash.calls, bash.errors), (2, 1));
-        assert!(project_detail(&conn, "/no-existe", &Filter::default(), 0).is_err());
+        assert!(project_detail(&conn, "/no-existe", &Filter::default(), "UTC").is_err());
     }
 }

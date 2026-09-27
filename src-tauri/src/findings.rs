@@ -55,18 +55,13 @@ fn input_price(conn: &Connection, model: &str) -> Result<Option<f64>> {
         .optional()?)
 }
 
-/// Todos los avisos del filtro, del más grave al menos. `now` y `tz_offset_min` como en `queries`.
-pub fn compute(
-    conn: &Connection,
-    f: &Filter,
-    now: i64,
-    tz_offset_min: i64,
-) -> Result<Vec<Finding>> {
+/// Todos los avisos del filtro, del más grave al menos. `now` en epoch ms y `tz` como en `queries`.
+pub fn compute(conn: &Connection, f: &Filter, now: i64, tz: &str) -> Result<Vec<Finding>> {
     let mut out = Vec::new();
     out.extend(compactions(conn, f)?);
     out.extend(expensive_model(conn, f)?);
     out.extend(tool_errors(conn, f)?);
-    out.extend(spend_spike(conn, f, tz_offset_min)?);
+    out.extend(spend_spike(conn, f, tz)?);
     out.extend(cache_drop(conn, f, now)?);
     // Avisos informativos y positivos: cuentan cómo es el uso aunque no haya problemas.
     let s = queries::summary(conn, f, now)?;
@@ -78,8 +73,8 @@ pub fn compute(
     out.extend(low_cache_models(conn, f)?);
     out.extend(one_shot(conn, f)?);
     out.extend(subagent_share(conn, f, &s)?);
-    out.extend(pace(conn, f, &s, tz_offset_min)?);
-    out.extend(after_hours(conn, f, &s, tz_offset_min)?);
+    out.extend(pace(conn, f, &s, tz)?);
+    out.extend(after_hours(conn, f, &s, tz)?);
     out.extend(cost_per_session(conn, f, &s, now)?);
     out.extend(unused_agents(conn, f)?);
     out.extend(cache_savings(&s));
@@ -216,8 +211,8 @@ fn tool_errors(conn: &Connection, f: &Filter) -> Result<Vec<Finding>> {
     Ok(out)
 }
 
-fn spend_spike(conn: &Connection, f: &Filter, tz_offset_min: i64) -> Result<Option<Finding>> {
-    let days: Vec<_> = queries::timeseries(conn, f, "day", tz_offset_min)?
+fn spend_spike(conn: &Connection, f: &Filter, tz: &str) -> Result<Option<Finding>> {
+    let days: Vec<_> = queries::timeseries(conn, f, "day", tz)?
         .into_iter()
         .filter(|p| p.cost_usd > 0.0)
         .collect();
@@ -560,7 +555,7 @@ fn subagent_share(conn: &Connection, f: &Filter, s: &queries::Summary) -> Result
     )))
 }
 
-fn pace(conn: &Connection, f: &Filter, s: &queries::Summary, tz: i64) -> Result<Option<Finding>> {
+fn pace(conn: &Connection, f: &Filter, s: &queries::Summary, tz: &str) -> Result<Option<Finding>> {
     let hours: Vec<_> = queries::timeseries(conn, f, "hour", tz)?
         .into_iter()
         .filter(|p| p.cost_usd > 0.0)
@@ -588,12 +583,14 @@ fn after_hours(
     conn: &Connection,
     f: &Filter,
     s: &queries::Summary,
-    tz: i64,
+    tz: &str,
 ) -> Result<Option<Finding>> {
+    use chrono::{TimeZone, Timelike};
     if s.cost_usd <= 0.0 {
         return Ok(None);
     }
-    let hour_of = |ts: i64| (ts + tz * 60_000).rem_euclid(86_400_000) / 3_600_000;
+    let zone = crate::tz::parse(tz);
+    let hour_of = |ts: i64| zone.timestamp_millis_opt(ts).unwrap().hour();
     let late: f64 = queries::timeseries(conn, f, "hour", tz)?
         .iter()
         .filter(|p| !(9..19).contains(&hour_of(p.ts)))
@@ -736,7 +733,7 @@ mod tests {
     fn sin_avisos() {
         // Sin actividad no hay nada que contar.
         let c = db::open_in_memory().unwrap();
-        assert!(compute(&c, &Filter::default(), 10_000, 0)
+        assert!(compute(&c, &Filter::default(), 10_000, "UTC")
             .unwrap()
             .is_empty());
     }
@@ -850,13 +847,15 @@ mod tests {
             0,
             None,
         );
-        let f = spend_spike(&c, &Filter::default(), 0).unwrap().unwrap();
+        let f = spend_spike(&c, &Filter::default(), "UTC").unwrap().unwrap();
         assert!((f.params["cost"].as_f64().unwrap() - 45.0).abs() < 1e-9);
         assert_eq!(f.params["ts"], json!(10 * DAY));
         // Sin el pico, no hay aviso.
         c.execute("DELETE FROM calls WHERE message_id = 'pico'", [])
             .unwrap();
-        assert!(spend_spike(&c, &Filter::default(), 0).unwrap().is_none());
+        assert!(spend_spike(&c, &Filter::default(), "UTC")
+            .unwrap()
+            .is_none());
     }
 
     #[test]
@@ -891,7 +890,7 @@ mod tests {
     }
 
     fn kinds(c: &Connection, f: &Filter) -> Vec<String> {
-        compute(c, f, 100 * DAY, 0)
+        compute(c, f, 100 * DAY, "UTC")
             .unwrap()
             .into_iter()
             .map(|x| x.kind)
@@ -915,7 +914,7 @@ mod tests {
                 "falta {expected} en {k:?}"
             );
         }
-        let all = compute(&c, &Filter::default(), 100 * DAY, 0).unwrap();
+        let all = compute(&c, &Filter::default(), 100 * DAY, "UTC").unwrap();
         let share = all.iter().find(|x| x.kind == "project_share").unwrap();
         assert_eq!(share.params["project"], "web");
         let top = all.iter().find(|x| x.kind == "top_session").unwrap();
@@ -932,7 +931,7 @@ mod tests {
             [],
         )
         .unwrap();
-        let all = compute(&c, &Filter::default(), 100 * DAY, 0).unwrap();
+        let all = compute(&c, &Filter::default(), 100 * DAY, "UTC").unwrap();
         assert_eq!(all.last().unwrap().severity, "good");
         assert!(all.iter().any(|x| x.kind == "cache_savings"));
         let ranks: Vec<u8> = all.iter().map(|x| rank(&x.severity)).collect();
@@ -997,7 +996,9 @@ mod tests {
         c.execute("INSERT INTO agents VALUES ('codex','Codex','/x',0)", [])
             .unwrap();
         let s = queries::summary(&c, &Filter::default(), 0).unwrap();
-        let late = after_hours(&c, &Filter::default(), &s, 0).unwrap().unwrap();
+        let late = after_hours(&c, &Filter::default(), &s, "UTC")
+            .unwrap()
+            .unwrap();
         assert!((late.params["share"].as_f64().unwrap() - 0.75).abs() < 1e-9);
         let idle = unused_agents(&c, &Filter::default()).unwrap().unwrap();
         assert_eq!(idle.params["agents"], "Codex");

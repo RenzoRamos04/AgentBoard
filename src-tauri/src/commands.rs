@@ -38,10 +38,10 @@ pub fn get_timeseries(
     state: tauri::State<AppState>,
     filter: Option<Filter>,
     bucket: String,
-    tz_offset_min: i64,
+    tz: String,
 ) -> CmdResult<Vec<Point>> {
     with_db(&state, |c| {
-        queries::timeseries(c, &filter.unwrap_or_default(), &bucket, tz_offset_min)
+        queries::timeseries(c, &filter.unwrap_or_default(), &bucket, &tz)
     })
 }
 
@@ -50,10 +50,10 @@ pub fn get_timeseries_by(
     state: tauri::State<AppState>,
     filter: Option<Filter>,
     by: String,
-    tz_offset_min: i64,
+    tz: String,
 ) -> CmdResult<Vec<SeriesPoint>> {
     with_db(&state, |c| {
-        queries::timeseries_by(c, &filter.unwrap_or_default(), &by, tz_offset_min)
+        queries::timeseries_by(c, &filter.unwrap_or_default(), &by, &tz)
     })
 }
 
@@ -82,10 +82,10 @@ pub fn get_activity(
 pub fn get_activity_daily(
     state: tauri::State<AppState>,
     filter: Option<Filter>,
-    tz_offset_min: i64,
+    tz: String,
 ) -> CmdResult<Vec<ActivityDay>> {
     with_db(&state, |c| {
-        insights::activity_daily(c, &filter.unwrap_or_default(), tz_offset_min)
+        insights::activity_daily(c, &filter.unwrap_or_default(), &tz)
     })
 }
 
@@ -151,10 +151,10 @@ pub fn get_project_detail(
     state: tauri::State<AppState>,
     key: String,
     filter: Option<Filter>,
-    tz_offset_min: i64,
+    tz: String,
 ) -> CmdResult<sessions::ProjectDetail> {
     with_db(&state, |c| {
-        sessions::project_detail(c, &key, &filter.unwrap_or_default(), tz_offset_min)
+        sessions::project_detail(c, &key, &filter.unwrap_or_default(), &tz)
     })
 }
 

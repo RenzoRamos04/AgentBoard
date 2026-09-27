@@ -82,13 +82,13 @@ pub fn menu_data(conn: &Connection, now_ms: i64) -> MenuData {
 
 /// Gasto de hoy por hora local, de las 00h a la hora en curso (huecos a 0).
 fn today_by_hour(conn: &Connection, today: &Filter, now_ms: i64) -> Vec<f64> {
-    use chrono::{Local, Offset, TimeZone, Timelike};
+    use chrono::{Local, TimeZone, Timelike};
     let Some(now) = Local.timestamp_millis_opt(now_ms).single() else {
         return Vec::new();
     };
     let mut hours = vec![0.0; now.hour() as usize + 1];
-    let offset_min = i64::from(now.offset().fix().local_minus_utc()) / 60;
-    for p in queries::timeseries(conn, today, "hour", offset_min).unwrap_or_default() {
+    for p in queries::timeseries(conn, today, "hour", &crate::tz::system_name()).unwrap_or_default()
+    {
         // `p.ts` es el inicio de la hora en epoch ms; se indexa por su hora local.
         let slot = Local
             .timestamp_millis_opt(p.ts)

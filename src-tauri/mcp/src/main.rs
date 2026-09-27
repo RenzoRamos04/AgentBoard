@@ -9,12 +9,11 @@
 
 use agentboard_lib::{db, findings, ingest, pricing, providers, queries, sessions, settings};
 use anyhow::{anyhow, bail, Result};
-use chrono::{Offset, Timelike};
+use chrono::TimeZone;
 use rusqlite::Connection;
 use serde_json::{json, Value};
 use std::io::{BufRead, Write};
 
-const DAY_MS: i64 = 86_400_000;
 const PROTOCOL: &str = "2025-06-18";
 
 fn main() {
@@ -139,7 +138,7 @@ fn run_tool(conn: &Connection, name: &str, args: &Value) -> Result<Value> {
             conn,
             &f()?,
             "day",
-            tz_offset(),
+            &tz_name(),
         )?)?),
         "list_agents" => Ok(serde_json::to_value(queries::list_agents(conn, &f()?)?)?),
         "list_projects" => Ok(serde_json::to_value(queries::list_projects(conn, &f()?)?)?),
@@ -148,7 +147,7 @@ fn run_tool(conn: &Connection, name: &str, args: &Value) -> Result<Value> {
             conn,
             &f()?,
             ingest::now_ms(),
-            tz_offset(),
+            &tz_name(),
         )?)?),
         "get_projects" => Ok(serde_json::to_value(sessions::list_projects(conn, &f()?)?)?),
         "get_project_detail" => {
@@ -159,7 +158,7 @@ fn run_tool(conn: &Connection, name: &str, args: &Value) -> Result<Value> {
                 conn,
                 key,
                 &f()?,
-                tz_offset(),
+                &tz_name(),
             )?)?)
         }
         "get_sessions" => {
@@ -240,19 +239,18 @@ fn period_range(p: &str) -> Result<(Option<i64>, Option<i64>)> {
         "all" => return Ok((None, None)),
         other => bail!("periodo desconocido: {other} (usa today, 7d, 30d, 60d, 90d o all)"),
     };
-    let now = chrono::Local::now();
-    let start = now
-        .with_hour(0)
-        .and_then(|d| d.with_minute(0))
-        .and_then(|d| d.with_second(0))
-        .and_then(|d| d.with_nanosecond(0))
-        .ok_or_else(|| anyhow!("no se pudo calcular el inicio del día"))?;
-    Ok((Some(start.timestamp_millis() - (days - 1) * DAY_MS), None))
+    // Días de calendario locales: restar múltiplos fijos de 24 h se desalinea al cambiar la hora.
+    let start_day = chrono::Local::now().date_naive() - chrono::Days::new((days - 1) as u64);
+    let start = chrono::Local
+        .from_local_datetime(&start_day.and_hms_opt(0, 0, 0).expect("medianoche válida"))
+        .earliest()
+        .ok_or_else(|| anyhow!("no se pudo calcular el inicio del periodo"))?;
+    Ok((Some(start.timestamp_millis()), None))
 }
 
-/// Minutos a sumar a UTC para la hora local (para agrupar la serie diaria por día local).
-fn tz_offset() -> i64 {
-    chrono::Local::now().offset().fix().local_minus_utc() as i64 / 60
+/// Zona IANA del sistema: agrupa las series por el día local histórico de cada fecha.
+fn tz_name() -> String {
+    agentboard_lib::tz::system_name()
 }
 
 /// Esquema del filtro común a casi todas las herramientas.
@@ -322,6 +320,8 @@ fn write_msg(out: &mut impl Write, msg: &Value) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const DAY_MS: i64 = 86_400_000;
 
     #[test]
     fn periodo_se_traduce() {

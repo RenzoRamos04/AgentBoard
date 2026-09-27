@@ -21,10 +21,11 @@ fn main() -> anyhow::Result<()> {
         s.cache_savings_usd,
         s.burn_rate_usd_h
     );
-    let offset = chrono::Local::now().offset().local_minus_utc() as i64 / 60;
     println!("\nDaily Activity");
-    for p in queries::timeseries(&conn, &f, "day", offset)? {
-        let d = chrono::DateTime::from_timestamp_millis(p.ts + offset * 60_000).unwrap();
+    for p in queries::timeseries(&conn, &f, "day", &agentboard_lib::tz::system_name())? {
+        let d = chrono::DateTime::from_timestamp_millis(p.ts)
+            .unwrap()
+            .with_timezone(&chrono::Local);
         println!(
             "  {}  ${:>8.2}  {:>5}",
             d.format("%m-%d"),

@@ -531,14 +531,9 @@ pub struct ActivityDay {
 /// Coste y turnos por día local y actividad (para el gráfico apilado). El gasto se fecha
 /// por el día de cada llamada, así la serie suma lo mismo que la tabla aunque un turno
 /// cruce el límite del filtro o una llamada no tenga turno.
-pub fn activity_daily(
-    conn: &Connection,
-    f: &Filter,
-    tz_offset_min: i64,
-) -> Result<Vec<ActivityDay>> {
-    const DAY_MS: i64 = 86_400_000;
-    let off = tz_offset_min * 60_000;
-    let day_of = |ts: i64| ((ts + off) / DAY_MS) * DAY_MS - off;
+pub fn activity_daily(conn: &Connection, f: &Filter, tz: &str) -> Result<Vec<ActivityDay>> {
+    let zone = crate::tz::parse(tz);
+    let day_of = |ts: i64| crate::tz::day_start(ts, &zone);
     let turns = turn_stats(conn, f)?;
     let mut acc: BTreeMap<(i64, String), (f64, i64)> = BTreeMap::new();
 
@@ -616,7 +611,7 @@ mod tests {
             to: Some(2000),
             ..Default::default()
         };
-        let daily = activity_daily(&conn, &f, 0).unwrap();
+        let daily = activity_daily(&conn, &f, "UTC").unwrap();
         // La tabla y la serie suman lo mismo (m1 + m2 = $6): antes m1 se descartaba porque
         // su turno empezó antes del periodo.
         let table: f64 = activity(&conn, &f)

@@ -249,24 +249,30 @@ export interface PriceRow {
   costUsd: number;
 }
 
-/** Minutos a sumar a UTC para obtener la hora local. */
-export const tzOffsetMin = () => -new Date().getTimezoneOffset();
+/** Zona horaria IANA del navegador: el backend agrupa cada fecha con sus reglas históricas. */
+export const tzName = () => {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  } catch {
+    return "UTC";
+  }
+};
 
 export const api = {
   summary: (filter: Filter) => invoke<Summary>("get_summary", { filter }),
   timeseries: (filter: Filter, bucket: "day" | "hour") =>
-    invoke<Point[]>("get_timeseries", { filter, bucket, tzOffsetMin: tzOffsetMin() }),
+    invoke<Point[]>("get_timeseries", { filter, bucket, tz: tzName() }),
   timeseriesBy: (filter: Filter, by: "agent" | "model" | "project" | "branch" | "tool") =>
-    invoke<SeriesPoint[]>("get_timeseries_by", { filter, by, tzOffsetMin: tzOffsetMin() }),
+    invoke<SeriesPoint[]>("get_timeseries_by", { filter, by, tz: tzName() }),
   breakdown: (filter: Filter, by: BreakdownBy) => invoke<BreakdownRow[]>("get_breakdown", { filter, by }),
   activity: (filter: Filter) => invoke<ActivityReport>("get_activity", { filter }),
-  activityDaily: (filter: Filter) => invoke<ActivityDay[]>("get_activity_daily", { filter, tzOffsetMin: tzOffsetMin() }),
+  activityDaily: (filter: Filter) => invoke<ActivityDay[]>("get_activity_daily", { filter, tz: tzName() }),
   agents: (filter: Filter) => invoke<AgentRow[]>("list_agents", { filter }),
   projects: (filter: Filter) => invoke<ProjectRow[]>("list_projects", { filter }),
   prices: (filter: Filter) => invoke<PriceRow[]>("list_prices", { filter }),
   sessions: (filter: Filter, limit?: number) => invoke<SessionList>("list_sessions", { filter, limit }),
   projectSummaries: (filter: Filter) => invoke<ProjectSummary[]>("list_project_summaries", { filter }),
-  projectDetail: (key: string, filter: Filter) => invoke<ProjectDetail>("get_project_detail", { key, filter, tzOffsetMin: tzOffsetMin() }),
+  projectDetail: (key: string, filter: Filter) => invoke<ProjectDetail>("get_project_detail", { key, filter, tz: tzName() }),
   sessionDetail: (id: string) => invoke<SessionDetail>("get_session_detail", { id }),
   dataInfo: () => invoke<DataInfo>("get_data_info"),
   settings: () => invoke<Settings>("get_settings"),
